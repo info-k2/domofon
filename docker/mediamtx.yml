@@ -1,0 +1,27 @@
+# MediaMTX: забирает RTSP с камеры и отдаёт приложению.
+# В приложении тогда: rtsp://IP_NAS:8554/door
+#
+# Потом можно заменить URL в приложении на прямой rtsp://камеры — код тот же.
+
+logLevel: info
+
+rtsp: true
+rtspTransports: [tcp]
+rtspAddress: :8554
+
+# Остальные протоколы не нужны для приложения.
+rtmp: false
+hls: false
+webrtc: false
+srt: false
+api: false
+metrics: false
+
+paths:
+  door:
+    # Подставьте ссылку своей камеры:
+    source: rtsp://USER:PASSWORD@192.168.1.10:554/Streaming/Channels/101
+    sourceProtocol: tcp
+    # Подключаться к камере только когда кто-то смотрит.
+    sourceOnDemand: true
+    sourceOnDemandStartTimeout: 10s

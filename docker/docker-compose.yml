@@ -1,0 +1,10 @@
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    restart: unless-stopped
+    # На Synology контейнер сразу видит камеры в LAN.
+    # Порты из mediamtx.yml слушают прямо на NAS (RTSP :8554).
+    network_mode: host
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
