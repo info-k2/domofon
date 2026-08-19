@@ -14,6 +14,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read app version
+        id: version
+        run: |
+          NAME=$(sed -n 's/.*versionName = "\(.*\)"/\1/p' app/build.gradle.kts | head -1)
+          CODE=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' app/build.gradle.kts | head -1)
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=v$NAME" >> "$GITHUB_OUTPUT"
+          echo "Version $NAME ($CODE), tag v$NAME"
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -25,15 +35,16 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk "domofon-${{ steps.version.outputs.name }}.apk"
 
-      - name: Publish latest release
+      - name: Publish versioned release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: Latest
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
           body: |
-            Автосборка с ветки main.
-            Установите с телефона кнопкой «Обновить» в приложении.
-          files: app/build/outputs/apk/debug/app-debug.apk
+            Версия ${{ steps.version.outputs.name }}
+            versionCode ${{ steps.version.outputs.code }}
+          files: domofon-${{ steps.version.outputs.name }}.apk
           make_latest: true
           fail_on_unmatched_files: true
