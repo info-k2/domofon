@@ -26,6 +26,7 @@ class HomeAssistantClient(
         val domain = entityId.substringBefore('.', missingDelimiterValue = "switch")
         val service = when (domain) {
             "lock" -> "unlock"
+            "input_button", "button" -> "press"
             else -> "turn_on"
         }
         val body = """{"entity_id":"$entityId"}"""
@@ -39,7 +40,8 @@ class HomeAssistantClient(
         runCatching {
             http.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    error("Home Assistant: HTTP ${response.code}")
+                    val details = response.body?.string()?.take(180).orEmpty()
+                    error("Home Assistant: HTTP ${response.code}" + details)
                 }
             }
         }

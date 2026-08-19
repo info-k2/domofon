@@ -111,7 +111,7 @@ fun SettingsScreen(
                 label = { Text("Сущность двери") },
                 placeholder = { Text("switch.domofon_open") },
                 supportingText = {
-                    Text("switch / input_boolean / script → turn_on, lock → unlock")
+                    Text("switch / input_boolean / script → turn_on, input_button / button → press, lock → unlock")
                 },
                 singleLine = true,
             )
