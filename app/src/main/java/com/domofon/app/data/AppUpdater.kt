@@ -6,16 +6,23 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
-import com.domofon.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
+
+data class GithubRelease(
+    val tag: String,
+    val title: String,
+    val publishedAt: String,
+    val apkUrl: String?,
+)
 
 sealed interface UpdateStatus {
     data object Idle : UpdateStatus
@@ -36,12 +43,23 @@ class AppUpdater(
     private val _status = MutableStateFlow<UpdateStatus>(UpdateStatus.Idle)
     val status = _status.asStateFlow()
 
-    suspend fun update(settings: AppSettings): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            val repo = settings.githubRepo.ifBlank { BuildConfig.GITHUB_REPO }.trim()
-            if (repo.isBlank() || !repo.contains('/')) {
-                error("Укажите GitHub-репозиторий в настройках (owner/name)")
+    private val _releases = MutableStateFlow<List<GithubRelease>>(emptyList())
+    val releases = _releases.asStateFlow()
+
+    private val _releasesError = MutableStateFlow<String?>(null)
+    val releasesError = _releasesError.asStateFlow()
+
+    suspend fun refreshReleases(token: String): Result<List<GithubRelease>> = withContext(Dispatchers.IO) {
+        runCatching { fetchReleases(token) }
+            .onSuccess {
+                _releases.value = it
+                _releasesError.value = null
             }
+            .onFailure { _releasesError.value = it.message }
+    }
+
+    suspend fun update(token: String, apkUrl: String? = null): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                 !app.packageManager.canRequestPackageInstalls()
             ) {
@@ -55,9 +73,9 @@ class AppUpdater(
             }
 
             _status.value = UpdateStatus.Checking
-            val apkUrl = latestApkUrl(repo, settings.githubToken)
+            val url = apkUrl ?: latestApkUrl(token)
             val file = File(app.cacheDir, "domofon-update.apk")
-            download(apkUrl, settings.githubToken, file)
+            download(url, token, file)
             _status.value = UpdateStatus.ReadyToInstall
             install(file)
         }.also {
@@ -65,33 +83,72 @@ class AppUpdater(
         }
     }
 
-    private fun latestApkUrl(repo: String, token: String): String {
-        val request = Request.Builder()
-            .url("https://api.github.com/repos/$repo/releases/latest")
+    private fun fetchReleases(token: String): List<GithubRelease> {
+        val request = githubRequest(
+            "https://api.github.com/repos/${AppConfig.GITHUB_REPO}/releases?per_page=10",
+            token,
+        )
+        http.newCall(request).execute().use { response ->
+            if (response.code == 404) {
+                error("Релизов ещё нет. Дождитесь сборки GitHub Actions.")
+            }
+            if (response.code == 401 || response.code == 403) {
+                error("Нет доступа к репозиторию. Вставьте GitHub token с правом repo.")
+            }
+            if (!response.isSuccessful) error("GitHub: HTTP ${response.code}")
+            val array = JSONArray(response.body!!.string())
+            val result = mutableListOf<GithubRelease>()
+            for (i in 0 until array.length()) {
+                val json = array.getJSONObject(i)
+                result += GithubRelease(
+                    tag = json.optString("tag_name"),
+                    title = json.optString("name").ifBlank { json.optString("tag_name") },
+                    publishedAt = json.optString("published_at").take(10),
+                    apkUrl = apkUrlFrom(json),
+                )
+            }
+            return result
+        }
+    }
+
+    private fun latestApkUrl(token: String): String {
+        val request = githubRequest(
+            "https://api.github.com/repos/${AppConfig.GITHUB_REPO}/releases/latest",
+            token,
+        )
+        http.newCall(request).execute().use { response ->
+            if (response.code == 404) {
+                error("На GitHub ещё нет Release с APK.")
+            }
+            if (response.code == 401 || response.code == 403) {
+                error("Нет доступа к репозиторию. Вставьте GitHub token с правом repo.")
+            }
+            if (!response.isSuccessful) error("GitHub: HTTP ${response.code}")
+            return apkUrlFrom(JSONObject(response.body!!.string()))
+                ?: error("В последнем релизе нет APK")
+        }
+    }
+
+    private fun apkUrlFrom(json: JSONObject): String? {
+        val assets = json.optJSONArray("assets") ?: return null
+        for (i in 0 until assets.length()) {
+            val asset = assets.getJSONObject(i)
+            if (asset.getString("name").endsWith(".apk", ignoreCase = true)) {
+                return asset.getString("browser_download_url")
+            }
+        }
+        return null
+    }
+
+    private fun githubRequest(url: String, token: String): Request =
+        Request.Builder()
+            .url(url)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "domofon-android")
             .apply {
                 if (token.isNotBlank()) header("Authorization", "Bearer $token")
             }
             .build()
-        http.newCall(request).execute().use { response ->
-            if (response.code == 404) {
-                error("На GitHub ещё нет Release с APK. Дождитесь сборки Actions.")
-            }
-            if (!response.isSuccessful) {
-                error("GitHub: HTTP ${response.code}")
-            }
-            val json = JSONObject(response.body!!.string())
-            val assets = json.optJSONArray("assets") ?: error("В релизе нет файлов")
-            for (i in 0 until assets.length()) {
-                val asset = assets.getJSONObject(i)
-                if (asset.getString("name").endsWith(".apk", ignoreCase = true)) {
-                    return asset.getString("browser_download_url")
-                }
-            }
-            error("В последнем релизе нет APK")
-        }
-    }
 
     private fun download(url: String, token: String, target: File) {
         val request = Request.Builder()

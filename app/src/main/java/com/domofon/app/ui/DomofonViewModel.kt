@@ -25,6 +25,8 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
     )
 
     val updateStatus = updater.status
+    val releases = updater.releases
+    val releasesError = updater.releasesError
 
     private val _messages = MutableSharedFlow<String>()
     val messages = _messages.asSharedFlow()
@@ -33,11 +35,12 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             store.save(value)
             _messages.emit("Сохранено")
+            updater.refreshReleases(value.githubToken)
         }
     }
 
-    fun setUseLocalRtsp(enabled: Boolean) {
-        viewModelScope.launch { store.setUseLocalRtsp(enabled) }
+    fun refreshReleases(token: String = settings.value.githubToken) {
+        viewModelScope.launch { updater.refreshReleases(token) }
     }
 
     fun openDoor() {
@@ -48,9 +51,9 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun updateApp() {
+    fun updateApp(apkUrl: String? = null) {
         viewModelScope.launch {
-            updater.update(settings.value)
+            updater.update(settings.value.githubToken, apkUrl)
                 .onSuccess { _messages.emit("Установите скачанное обновление") }
                 .onFailure { _messages.emit(it.message ?: "Обновление не удалось") }
         }

@@ -20,6 +20,8 @@ fun DomofonRoot(viewModel: DomofonViewModel = viewModel()) {
     val nav = rememberNavController()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
+    val releases by viewModel.releases.collectAsStateWithLifecycle()
+    val releasesError by viewModel.releasesError.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -35,17 +37,19 @@ fun DomofonRoot(viewModel: DomofonViewModel = viewModel()) {
             composable("live") {
                 LiveScreen(
                     settings = settings,
-                    updateStatus = updateStatus,
                     onOpenDoor = viewModel::openDoor,
-                    onUseLocal = viewModel::setUseLocalRtsp,
                     onOpenSettings = { nav.navigate("settings") },
-                    onUpdate = viewModel::updateApp,
                 )
             }
             composable("settings") {
                 SettingsScreen(
                     current = settings,
+                    updateStatus = updateStatus,
+                    releases = releases,
+                    releasesError = releasesError,
                     onSave = viewModel::saveSettings,
+                    onRefreshReleases = viewModel::refreshReleases,
+                    onUpdate = viewModel::updateApp,
                     onBack = { nav.popBackStack() },
                 )
             }
