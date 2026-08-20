@@ -3,12 +3,11 @@ from __future__ import annotations
 import json
 import os
 import secrets
-from ipaddress import ip_address
 from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
@@ -17,6 +16,8 @@ API_KEY_FILE = DATA_DIR / "api_key"
 HA_BASE_URL = os.getenv("HA_BASE_URL", "").rstrip("/")
 HA_TOKEN = os.getenv("HA_TOKEN", "")
 HA_ENTITY_ID = os.getenv("HA_ENTITY_ID", "input_button.domofon")
+BRIDGE_USER = os.getenv("BRIDGE_USER", "").strip()
+BRIDGE_PASSWORD = os.getenv("BRIDGE_PASSWORD", "").strip()
 
 
 def load_or_create_api_key() -> str:
@@ -35,30 +36,17 @@ def load_or_create_api_key() -> str:
 
 API_KEY = load_or_create_api_key()
 
-app = FastAPI(title="Domofon bridge", version="0.4.1")
+app = FastAPI(title="Domofon bridge", version="0.5.0")
+
+
+class LoginIn(BaseModel):
+    username: str
+    password: str
 
 
 class DeviceIn(BaseModel):
     push_token: str = Field(min_length=8)
     name: str = "android"
-
-
-def is_lan_ip(value: str) -> bool:
-    try:
-        addr = ip_address(value)
-    except ValueError:
-        return False
-    return bool(addr.is_private or addr.is_loopback)
-
-
-def request_is_from_lan(request: Request, x_forwarded_for: str | None) -> bool:
-    direct = request.client.host if request.client else ""
-    if not is_lan_ip(direct):
-        return False
-    if not x_forwarded_for:
-        return True
-    forwarded = x_forwarded_for.split(",", 1)[0].strip()
-    return is_lan_ip(forwarded)
 
 
 def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -93,13 +81,14 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/v1/pair")
-def pair(
-    request: Request,
-    x_forwarded_for: str | None = Header(default=None),
-) -> dict[str, str]:
-    if not request_is_from_lan(request, x_forwarded_for):
-        raise HTTPException(403, "Ключ выдаётся только из домашней сети")
+@app.post("/v1/login")
+def login(body: LoginIn) -> dict[str, str]:
+    if not BRIDGE_USER or not BRIDGE_PASSWORD:
+        raise HTTPException(500, "BRIDGE_USER / BRIDGE_PASSWORD are not configured")
+    user_ok = secrets.compare_digest(body.username, BRIDGE_USER)
+    pass_ok = secrets.compare_digest(body.password, BRIDGE_PASSWORD)
+    if not (user_ok and pass_ok):
+        raise HTTPException(401, "Неверный логин или пароль")
     return {"api_key": API_KEY}
 
 

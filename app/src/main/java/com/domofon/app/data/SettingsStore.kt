@@ -14,6 +14,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 data class AppSettings(
     val rtspUrl: String = "rtsp://192.168.1.2:8554/door",
     val bridgeUrl: String = "",
+    val bridgeUser: String = "",
     val bridgeToken: String = "",
     val githubToken: String = "",
 )
@@ -21,6 +22,7 @@ data class AppSettings(
 class SettingsStore(private val context: Context) {
     private val rtspUrl = stringPreferencesKey("rtsp_url")
     private val bridgeUrl = stringPreferencesKey("bridge_url")
+    private val bridgeUser = stringPreferencesKey("bridge_user")
     private val bridgeToken = stringPreferencesKey("bridge_token")
     private val githubToken = stringPreferencesKey("github_token")
 
@@ -28,6 +30,7 @@ class SettingsStore(private val context: Context) {
         AppSettings(
             rtspUrl = prefs[rtspUrl] ?: AppSettings().rtspUrl,
             bridgeUrl = prefs[bridgeUrl] ?: "",
+            bridgeUser = prefs[bridgeUser] ?: "",
             bridgeToken = prefs[bridgeToken] ?: "",
             githubToken = prefs[githubToken] ?: "",
         )
@@ -37,6 +40,7 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[rtspUrl] = value.rtspUrl.trim()
             prefs[bridgeUrl] = value.bridgeUrl.trim().trimEnd('/')
+            prefs[bridgeUser] = value.bridgeUser.trim()
             prefs[bridgeToken] = value.bridgeToken.trim()
             prefs[githubToken] = value.githubToken.trim()
         }

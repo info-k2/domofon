@@ -45,14 +45,15 @@ fun SettingsScreen(
     releases: List<GithubRelease>,
     releasesError: String?,
     onSave: (AppSettings) -> Unit,
-    onPairFromLan: (AppSettings) -> Unit,
+    onLogin: (AppSettings, String) -> Unit,
     onRefreshReleases: (String) -> Unit,
     onUpdate: (String?) -> Unit,
     onBack: () -> Unit,
 ) {
     var rtspUrl by remember(current.rtspUrl) { mutableStateOf(current.rtspUrl) }
     var bridgeUrl by remember(current.bridgeUrl) { mutableStateOf(current.bridgeUrl) }
-    var bridgeToken by remember(current.bridgeToken) { mutableStateOf(current.bridgeToken) }
+    var bridgeUser by remember(current.bridgeUser) { mutableStateOf(current.bridgeUser) }
+    var bridgePassword by remember { mutableStateOf("") }
     var githubToken by remember(current.githubToken) { mutableStateOf(current.githubToken) }
 
     LaunchedEffect(current.githubToken) {
@@ -101,27 +102,43 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Адрес Docker-моста") },
                 placeholder = { Text("http://192.168.1.2:8787") },
-                supportingText = { Text("Сначала подключитесь из домашнего Wi‑Fi") },
+                supportingText = { Text("Домашний IP, белый IP или домен") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = bridgeUser,
+                onValueChange = { bridgeUser = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Логин") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = bridgePassword,
+                onValueChange = { bridgePassword = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Пароль") },
+                visualTransformation = PasswordVisualTransformation(),
                 singleLine = true,
             )
             Text(
-                if (bridgeToken.isNotBlank()) "Ключ получен" else "Ключ ещё не получен",
+                if (current.bridgeToken.isNotBlank()) "Вход выполнен" else "Нужно войти",
                 style = MaterialTheme.typography.bodyMedium,
             )
             OutlinedButton(
                 onClick = {
-                    onPairFromLan(
+                    onLogin(
                         current.copy(
                             rtspUrl = rtspUrl,
                             bridgeUrl = bridgeUrl,
-                            bridgeToken = bridgeToken,
+                            bridgeUser = bridgeUser,
                             githubToken = githubToken,
                         ),
+                        bridgePassword,
                     )
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Получить ключ в домашней сети")
+                Text("Войти")
             }
 
             Button(
@@ -130,7 +147,7 @@ fun SettingsScreen(
                         current.copy(
                             rtspUrl = rtspUrl,
                             bridgeUrl = bridgeUrl,
-                            bridgeToken = bridgeToken,
+                            bridgeUser = bridgeUser,
                             githubToken = githubToken,
                         ),
                     )

@@ -6,6 +6,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 class BridgeClient(
@@ -19,7 +20,7 @@ class BridgeClient(
         val key = settings.bridgeToken
         if (base.isBlank() || key.isBlank()) {
             return@withContext Result.failure(
-                IllegalStateException("Заполните адрес моста и получите ключ в домашней сети"),
+                IllegalStateException("Войдите на сервер в настройках"),
             )
         }
         val request = Request.Builder()
@@ -37,25 +38,32 @@ class BridgeClient(
         }
     }
 
-    suspend fun pair(bridgeUrl: String): Result<String> = withContext(Dispatchers.IO) {
-        val base = bridgeUrl.trim().trimEnd('/')
-        if (base.isBlank()) {
-            return@withContext Result.failure(IllegalStateException("Сначала укажите адрес моста"))
-        }
-        val request = Request.Builder().url("$base/v1/pair").get().build()
-        runCatching {
-            http.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                if (response.code == 403) {
-                    error("Ключ выдаётся только из домашнего Wi‑Fi")
+    suspend fun login(bridgeUrl: String, username: String, password: String): Result<String> =
+        withContext(Dispatchers.IO) {
+            val base = bridgeUrl.trim().trimEnd('/')
+            if (base.isBlank()) {
+                return@withContext Result.failure(IllegalStateException("Укажите адрес моста"))
+            }
+            if (username.isBlank() || password.isBlank()) {
+                return@withContext Result.failure(IllegalStateException("Введите логин и пароль"))
+            }
+            val json = JSONObject()
+                .put("username", username)
+                .put("password", password)
+                .toString()
+            val request = Request.Builder()
+                .url("$base/v1/login")
+                .post(json.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .build()
+            runCatching {
+                http.newCall(request).execute().use { response ->
+                    val body = response.body?.string().orEmpty()
+                    if (response.code == 401) error("Неверный логин или пароль")
+                    if (!response.isSuccessful) error("Мост: HTTP ${response.code} $body")
+                    val key = JSONObject(body).optString("api_key")
+                    if (key.isBlank()) error("Мост не вернул ключ")
+                    key
                 }
-                if (!response.isSuccessful) {
-                    error("Мост: HTTP ${response.code} $body")
-                }
-                val key = org.json.JSONObject(body).optString("api_key")
-                if (key.isBlank()) error("Мост не вернул ключ")
-                key
             }
         }
-    }
 }
