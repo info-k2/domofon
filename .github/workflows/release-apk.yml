@@ -18,11 +18,9 @@ jobs:
         id: version
         run: |
           NAME=$(sed -n 's/.*versionName = "\(.*\)"/\1/p' app/build.gradle.kts | head -1)
-          CODE=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' app/build.gradle.kts | head -1)
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
-          echo "code=$CODE" >> "$GITHUB_OUTPUT"
           echo "tag=v$NAME" >> "$GITHUB_OUTPUT"
-          echo "Version $NAME ($CODE), tag v$NAME"
+          echo "Version $NAME, tag v$NAME"
 
       - uses: actions/setup-java@v4
         with:
@@ -41,10 +39,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
-          body: |
-            Версия ${{ steps.version.outputs.name }}
-            versionCode ${{ steps.version.outputs.code }}
+          name: ${{ steps.version.outputs.name }}
+          body: Версия ${{ steps.version.outputs.name }}
           files: domofon-${{ steps.version.outputs.name }}.apk
           make_latest: true
           fail_on_unmatched_files: true
