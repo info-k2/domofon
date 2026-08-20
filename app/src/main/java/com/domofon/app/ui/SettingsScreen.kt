@@ -50,9 +50,8 @@ fun SettingsScreen(
     onBack: () -> Unit,
 ) {
     var rtspUrl by remember(current.rtspUrl) { mutableStateOf(current.rtspUrl) }
-    var haBaseUrl by remember(current.haBaseUrl) { mutableStateOf(current.haBaseUrl) }
-    var haToken by remember(current.haToken) { mutableStateOf(current.haToken) }
-    var haEntityId by remember(current.haEntityId) { mutableStateOf(current.haEntityId) }
+    var bridgeUrl by remember(current.bridgeUrl) { mutableStateOf(current.bridgeUrl) }
+    var bridgeToken by remember(current.bridgeToken) { mutableStateOf(current.bridgeToken) }
     var githubToken by remember(current.githubToken) { mutableStateOf(current.githubToken) }
 
     LaunchedEffect(current.githubToken) {
@@ -91,35 +90,25 @@ fun SettingsScreen(
             )
 
             Text(
-                "Home Assistant",
+                "Сервер",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(top = 8.dp),
             )
             OutlinedTextField(
-                value = haBaseUrl,
-                onValueChange = { haBaseUrl = it },
+                value = bridgeUrl,
+                onValueChange = { bridgeUrl = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Адрес HA") },
-                placeholder = { Text("https://ha.example.com") },
+                label = { Text("Адрес Docker-моста") },
+                placeholder = { Text("https://domofon.example.com") },
+                supportingText = { Text("Только мост. Home Assistant на телефоне не указывается.") },
                 singleLine = true,
             )
             OutlinedTextField(
-                value = haToken,
-                onValueChange = { haToken = it },
+                value = bridgeToken,
+                onValueChange = { bridgeToken = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Long-lived token") },
+                label = { Text("API-ключ моста") },
                 visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-            )
-            OutlinedTextField(
-                value = haEntityId,
-                onValueChange = { haEntityId = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Сущность двери") },
-                placeholder = { Text("input_button.domofon") },
-                supportingText = {
-                    Text("switch / input_boolean / script → turn_on, input_button / button → press, lock → unlock")
-                },
                 singleLine = true,
             )
 
@@ -128,9 +117,8 @@ fun SettingsScreen(
                     onSave(
                         current.copy(
                             rtspUrl = rtspUrl,
-                            haBaseUrl = haBaseUrl,
-                            haToken = haToken,
-                            haEntityId = haEntityId,
+                            bridgeUrl = bridgeUrl,
+                            bridgeToken = bridgeToken,
                             githubToken = githubToken,
                         ),
                     )

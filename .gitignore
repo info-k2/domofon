@@ -16,3 +16,5 @@ keystore.properties
 *.jks
 *.keystore
 !signing/domofon.jks
+docker/.env
+docker/bridge-data/
