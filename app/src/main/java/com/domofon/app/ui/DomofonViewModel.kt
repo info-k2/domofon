@@ -43,7 +43,17 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { updater.refreshReleases(token) }
     }
 
-    fun openDoor() {
+    fun pairFromLan(draft: AppSettings) {
+        viewModelScope.launch {
+            bridge.pair(draft.bridgeUrl)
+                .onSuccess { key ->
+                    val updated = draft.copy(bridgeToken = key)
+                    store.save(updated)
+                    _messages.emit("Ключ получен из домашней сети")
+                }
+                .onFailure { _messages.emit(it.message ?: "Не удалось получить ключ") }
+        }
+    }
         viewModelScope.launch {
             bridge.openDoor(settings.value)
                 .onSuccess { _messages.emit("Команда открытия отправлена") }

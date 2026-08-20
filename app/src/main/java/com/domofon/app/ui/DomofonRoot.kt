@@ -48,6 +48,7 @@ fun DomofonRoot(viewModel: DomofonViewModel = viewModel()) {
                     releases = releases,
                     releasesError = releasesError,
                     onSave = viewModel::saveSettings,
+                    onPairFromLan = viewModel::pairFromLan,
                     onRefreshReleases = viewModel::refreshReleases,
                     onUpdate = viewModel::updateApp,
                     onBack = { nav.popBackStack() },

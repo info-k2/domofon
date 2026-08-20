@@ -45,6 +45,7 @@ fun SettingsScreen(
     releases: List<GithubRelease>,
     releasesError: String?,
     onSave: (AppSettings) -> Unit,
+    onPairFromLan: (AppSettings) -> Unit,
     onRefreshReleases: (String) -> Unit,
     onUpdate: (String?) -> Unit,
     onBack: () -> Unit,
@@ -99,18 +100,29 @@ fun SettingsScreen(
                 onValueChange = { bridgeUrl = it },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Адрес Docker-моста") },
-                placeholder = { Text("https://domofon.example.com") },
-                supportingText = { Text("Только мост. Home Assistant на телефоне не указывается.") },
+                placeholder = { Text("http://192.168.1.2:8787") },
+                supportingText = { Text("Сначала подключитесь из домашнего Wi‑Fi") },
                 singleLine = true,
             )
-            OutlinedTextField(
-                value = bridgeToken,
-                onValueChange = { bridgeToken = it },
+            Text(
+                if (bridgeToken.isNotBlank()) "Ключ получен" else "Ключ ещё не получен",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            OutlinedButton(
+                onClick = {
+                    onPairFromLan(
+                        current.copy(
+                            rtspUrl = rtspUrl,
+                            bridgeUrl = bridgeUrl,
+                            bridgeToken = bridgeToken,
+                            githubToken = githubToken,
+                        ),
+                    )
+                },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("API-ключ моста") },
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-            )
+            ) {
+                Text("Получить ключ в домашней сети")
+            }
 
             Button(
                 onClick = {

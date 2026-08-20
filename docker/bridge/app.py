@@ -2,26 +2,63 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 DEVICES_FILE = DATA_DIR / "devices.json"
+API_KEY_FILE = DATA_DIR / "api_key"
 HA_BASE_URL = os.getenv("HA_BASE_URL", "").rstrip("/")
 HA_TOKEN = os.getenv("HA_TOKEN", "")
 HA_ENTITY_ID = os.getenv("HA_ENTITY_ID", "input_button.domofon")
-API_KEY = os.getenv("API_KEY", "")
 
-app = FastAPI(title="Domofon bridge", version="0.4.0")
+
+def load_or_create_api_key() -> str:
+    env_key = os.getenv("API_KEY", "").strip()
+    if env_key:
+        return env_key
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if API_KEY_FILE.exists():
+        stored = API_KEY_FILE.read_text(encoding="utf-8").strip()
+        if stored:
+            return stored
+    key = secrets.token_hex(20)
+    API_KEY_FILE.write_text(key, encoding="utf-8")
+    return key
+
+
+API_KEY = load_or_create_api_key()
+
+app = FastAPI(title="Domofon bridge", version="0.4.1")
 
 
 class DeviceIn(BaseModel):
     push_token: str = Field(min_length=8)
     name: str = "android"
+
+
+def is_lan_ip(value: str) -> bool:
+    try:
+        addr = ip_address(value)
+    except ValueError:
+        return False
+    return bool(addr.is_private or addr.is_loopback)
+
+
+def request_is_from_lan(request: Request, x_forwarded_for: str | None) -> bool:
+    direct = request.client.host if request.client else ""
+    if not is_lan_ip(direct):
+        return False
+    if not x_forwarded_for:
+        return True
+    forwarded = x_forwarded_for.split(",", 1)[0].strip()
+    return is_lan_ip(forwarded)
 
 
 def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -56,6 +93,16 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/v1/pair")
+def pair(
+    request: Request,
+    x_forwarded_for: str | None = Header(default=None),
+) -> dict[str, str]:
+    if not request_is_from_lan(request, x_forwarded_for):
+        raise HTTPException(403, "Ключ выдаётся только из домашней сети")
+    return {"api_key": API_KEY}
+
+
 @app.post("/v1/door/open")
 async def open_door(_: None = Depends(require_api_key)) -> dict[str, str]:
     if not HA_BASE_URL or not HA_TOKEN or not HA_ENTITY_ID:
@@ -88,5 +135,4 @@ def register_device(body: DeviceIn, _: None = Depends(require_api_key)) -> dict[
 @app.post("/v1/ring")
 def ring(_: None = Depends(require_api_key)) -> dict[str, Any]:
     devices = load_devices()
-    # FCM will be wired here later. For now the phone path is prepared.
     return {"status": "queued", "recipients": len(devices)}
