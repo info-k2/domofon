@@ -3,7 +3,8 @@ services:
     image: bluenviron/mediamtx:latest
     container_name: mediamtx
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "8554:8554"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
 
@@ -11,7 +12,8 @@ services:
     build: ./bridge
     container_name: domofon-bridge
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "8787:8787"
     env_file: .env
     environment:
       DATA_DIR: /data
