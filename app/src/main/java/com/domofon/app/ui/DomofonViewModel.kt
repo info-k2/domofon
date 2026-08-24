@@ -46,9 +46,14 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
     fun login(draft: AppSettings, password: String) {
         viewModelScope.launch {
             bridge.login(draft.bridgeUrl, draft.bridgeUser, password)
-                .onSuccess { key ->
-                    store.save(draft.copy(bridgeToken = key))
-                    _messages.emit("Вход выполнен")
+                .onSuccess { result ->
+                    store.save(
+                        draft.copy(
+                            bridgeToken = result.apiKey,
+                            rtspUrl = result.streamUrl,
+                        ),
+                    )
+                    _messages.emit("Вход выполнен, видео подключено")
                 }
                 .onFailure { _messages.emit(it.message ?: "Не удалось войти") }
         }

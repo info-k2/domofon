@@ -28,6 +28,7 @@ MQTT_USER = os.getenv("MQTT_USER", "").strip()
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "").strip()
 MQTT_TOPIC_DOOR = os.getenv("MQTT_TOPIC_DOOR", "domofon/door/open")
 MQTT_TOPIC_RING = os.getenv("MQTT_TOPIC_RING", "domofon/ring")
+STREAM_URL = os.getenv("STREAM_URL", "").strip()
 
 
 def load_or_create_api_key() -> str:
@@ -49,7 +50,7 @@ mqtt_client: mqtt.Client | None = None
 mqtt_lock = threading.Lock()
 last_ring: dict[str, Any] | None = None
 
-app = FastAPI(title="Domofon bridge", version="0.6.0")
+app = FastAPI(title="Domofon bridge", version="0.6.1")
 
 
 class LoginIn(BaseModel):
@@ -136,6 +137,7 @@ def health() -> dict[str, Any]:
         "mqtt": MQTT_HOST,
         "door_topic": MQTT_TOPIC_DOOR,
         "ring_topic": MQTT_TOPIC_RING,
+        "stream_url": STREAM_URL or None,
         "last_ring": last_ring,
     }
 
@@ -148,7 +150,9 @@ def login(body: LoginIn) -> dict[str, str]:
     pass_ok = secrets.compare_digest(body.password, BRIDGE_PASSWORD)
     if not (user_ok and pass_ok):
         raise HTTPException(401, "Неверный логин или пароль")
-    return {"api_key": API_KEY}
+    if not STREAM_URL:
+        raise HTTPException(500, "STREAM_URL is not configured")
+    return {"api_key": API_KEY, "stream_url": STREAM_URL}
 
 
 @app.post("/v1/door/open")

@@ -38,7 +38,7 @@ class BridgeClient(
         }
     }
 
-    suspend fun login(bridgeUrl: String, username: String, password: String): Result<String> =
+    suspend fun login(bridgeUrl: String, username: String, password: String): Result<LoginResult> =
         withContext(Dispatchers.IO) {
             val base = bridgeUrl.trim().trimEnd('/')
             if (base.isBlank()) {
@@ -60,9 +60,12 @@ class BridgeClient(
                     val body = response.body?.string().orEmpty()
                     if (response.code == 401) error("Неверный логин или пароль")
                     if (!response.isSuccessful) error("Мост: HTTP ${response.code} $body")
-                    val key = JSONObject(body).optString("api_key")
+                    val parsed = JSONObject(body)
+                    val key = parsed.optString("api_key")
+                    val stream = parsed.optString("stream_url")
                     if (key.isBlank()) error("Мост не вернул ключ")
-                    key
+                    if (stream.isBlank()) error("Мост не вернул ссылку на видео")
+                    LoginResult(apiKey = key, streamUrl = stream)
                 }
             }
         }

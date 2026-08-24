@@ -18,3 +18,5 @@ keystore.properties
 !signing/domofon.jks
 docker/.env
 docker/bridge-data/
+docker/mediamtx.yml
+

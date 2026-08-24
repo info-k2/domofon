@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.map
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "domofon")
 
 data class AppSettings(
-    val rtspUrl: String = "rtsp://192.168.1.2:8554/door",
+    val rtspUrl: String = "",
     val bridgeUrl: String = "",
     val bridgeUser: String = "",
     val bridgeToken: String = "",
@@ -28,7 +28,7 @@ class SettingsStore(private val context: Context) {
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         AppSettings(
-            rtspUrl = prefs[rtspUrl] ?: AppSettings().rtspUrl,
+            rtspUrl = prefs[rtspUrl] ?: "",
             bridgeUrl = prefs[bridgeUrl] ?: "",
             bridgeUser = prefs[bridgeUser] ?: "",
             bridgeToken = prefs[bridgeToken] ?: "",

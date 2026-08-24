@@ -63,7 +63,7 @@ fun LiveScreen(
             contentAlignment = Alignment.Center,
         ) {
             if (settings.rtspUrl.isBlank()) {
-                Text("Укажите RTSP-ссылку в настройках")
+                Text("Укажите сервер и войдите — ссылка на видео придёт с моста")
             } else {
                 RtspPlayer(
                     url = settings.rtspUrl,

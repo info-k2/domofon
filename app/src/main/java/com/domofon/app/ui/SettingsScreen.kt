@@ -50,7 +50,6 @@ fun SettingsScreen(
     onUpdate: (String?) -> Unit,
     onBack: () -> Unit,
 ) {
-    var rtspUrl by remember(current.rtspUrl) { mutableStateOf(current.rtspUrl) }
     var bridgeUrl by remember(current.bridgeUrl) { mutableStateOf(current.bridgeUrl) }
     var bridgeUser by remember(current.bridgeUser) { mutableStateOf(current.bridgeUser) }
     var bridgePassword by remember { mutableStateOf("") }
@@ -80,28 +79,24 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Видео", style = MaterialTheme.typography.titleMedium)
-            OutlinedTextField(
-                value = rtspUrl,
-                onValueChange = { rtspUrl = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("RTSP") },
-                placeholder = { Text("rtsp://192.168.1.2:8554/door") },
-                supportingText = { Text("MediaMTX или прямая ссылка камеры") },
-                singleLine = true,
-            )
-
             Text(
                 "Сервер",
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(
+                if (current.rtspUrl.isNotBlank()) {
+                    "Видео: ${current.rtspUrl}"
+                } else {
+                    "Видео появится после входа (с сервера)"
+                },
+                style = MaterialTheme.typography.bodySmall,
             )
             OutlinedTextField(
                 value = bridgeUrl,
                 onValueChange = { bridgeUrl = it },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Адрес Docker-моста") },
-                placeholder = { Text("http://192.168.1.2:8787") },
+                placeholder = { Text("http://192.168.0.34:8787") },
                 supportingText = { Text("Домашний IP, белый IP или домен") },
                 singleLine = true,
             )
@@ -128,7 +123,6 @@ fun SettingsScreen(
                 onClick = {
                     onLogin(
                         current.copy(
-                            rtspUrl = rtspUrl,
                             bridgeUrl = bridgeUrl,
                             bridgeUser = bridgeUser,
                             githubToken = githubToken,
@@ -145,7 +139,6 @@ fun SettingsScreen(
                 onClick = {
                     onSave(
                         current.copy(
-                            rtspUrl = rtspUrl,
                             bridgeUrl = bridgeUrl,
                             bridgeUser = bridgeUser,
                             githubToken = githubToken,
