@@ -65,7 +65,7 @@ fun LiveScreen(
             if (settings.rtspUrl.isBlank()) {
                 Text("Укажите сервер и войдите — ссылка на видео придёт с моста")
             } else {
-                RtspPlayer(
+                WebRtcPlayer(
                     url = settings.rtspUrl,
                     modifier = Modifier.fillMaxSize(),
                 )

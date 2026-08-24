@@ -85,9 +85,9 @@ fun SettingsScreen(
             )
             Text(
                 if (current.rtspUrl.isNotBlank()) {
-                    "Видео: ${current.rtspUrl}"
+                    "Видео (WebRTC): ${current.rtspUrl}"
                 } else {
-                    "Видео появится после входа (с сервера)"
+                    "Видео появится после входа (WebRTC с сервера)"
                 },
                 style = MaterialTheme.typography.bodySmall,
             )

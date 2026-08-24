@@ -17,8 +17,8 @@ android {
         applicationId = "com.domofon.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.6.0"
+        versionCode = 11
+        versionName = "0.7.0"
     }
 
     signingConfigs {
@@ -87,6 +87,6 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
-    implementation("org.videolan.android:libvlc-all:3.6.2")
+    implementation("io.getstream:stream-webrtc-android:1.3.10")
     implementation("androidx.core:core-ktx:1.15.0")
 }

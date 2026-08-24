@@ -1,0 +1,239 @@
+package com.domofon.app.ui
+
+import android.content.Context
+import android.view.ViewGroup
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.webrtc.DefaultVideoDecoderFactory
+import org.webrtc.DefaultVideoEncoderFactory
+import org.webrtc.EglBase
+import org.webrtc.MediaConstraints
+import org.webrtc.PeerConnection
+import org.webrtc.PeerConnectionFactory
+import org.webrtc.SessionDescription
+import org.webrtc.SurfaceViewRenderer
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+
+private class WhepSession(context: Context, private val renderer: SurfaceViewRenderer) {
+    private val executor = Executors.newSingleThreadExecutor()
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .build()
+    private val egl = EglBase.create()
+    private val factory: PeerConnectionFactory
+    private var peer: PeerConnection? = null
+    private var currentUrl: String? = null
+    private val resourceUrl = AtomicReference<String?>(null)
+
+    init {
+        PeerConnectionFactory.initialize(
+            PeerConnectionFactory.InitializationOptions.builder(context.applicationContext)
+                .setEnableInternalTracer(false)
+                .createInitializationOptions(),
+        )
+        val encoder = DefaultVideoEncoderFactory(egl.eglBaseContext, true, true)
+        val decoder = DefaultVideoDecoderFactory(egl.eglBaseContext)
+        factory = PeerConnectionFactory.builder()
+            .setVideoEncoderFactory(encoder)
+            .setVideoDecoderFactory(decoder)
+            .createPeerConnectionFactory()
+        renderer.init(egl.eglBaseContext, null)
+        renderer.setMirror(false)
+        renderer.setEnableHardwareScaler(true)
+    }
+
+    fun play(whepUrl: String) {
+        if (whepUrl.isBlank() || whepUrl == currentUrl) return
+        currentUrl = whepUrl
+        executor.execute {
+            runCatching { connect(whepUrl) }
+                .onFailure { it.printStackTrace() }
+        }
+    }
+
+    private fun connect(whepUrl: String) {
+        closePeerLocked()
+        val iceServers = listOf(
+            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
+        )
+        val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
+            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+        }
+        val observer = object : PeerConnection.Observer {
+            override fun onSignalingChange(state: PeerConnection.SignalingState?) = Unit
+            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) = Unit
+            override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
+            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) = Unit
+            override fun onIceCandidate(candidate: org.webrtc.IceCandidate?) = Unit
+            override fun onIceCandidatesRemoved(candidates: Array<out org.webrtc.IceCandidate>?) = Unit
+            override fun onAddStream(stream: org.webrtc.MediaStream?) = Unit
+            override fun onRemoveStream(stream: org.webrtc.MediaStream?) = Unit
+            override fun onDataChannel(dc: org.webrtc.DataChannel?) = Unit
+            override fun onRenegotiationNeeded() = Unit
+            override fun onAddTrack(
+                receiver: org.webrtc.RtpReceiver?,
+                streams: Array<out org.webrtc.MediaStream>?,
+            ) {
+                val track = receiver?.track() as? org.webrtc.VideoTrack ?: return
+                track.addSink(renderer)
+            }
+        }
+        val pc = factory.createPeerConnection(rtcConfig, observer)
+            ?: error("PeerConnection failed")
+        peer = pc
+        pc.addTransceiver(
+            org.webrtc.MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,
+            org.webrtc.RtpTransceiver.RtpTransceiverInit(
+                org.webrtc.RtpTransceiver.RtpTransceiverDirection.RECV_ONLY,
+            ),
+        )
+        pc.addTransceiver(
+            org.webrtc.MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO,
+            org.webrtc.RtpTransceiver.RtpTransceiverInit(
+                org.webrtc.RtpTransceiver.RtpTransceiverDirection.RECV_ONLY,
+            ),
+        )
+
+        val constraints = MediaConstraints()
+        val offerLatch = java.util.concurrent.CountDownLatch(1)
+        val offerBox = arrayOfNulls<SessionDescription>(1)
+        val offerError = arrayOfNulls<String>(1)
+        pc.createOffer(object : org.webrtc.SdpObserver {
+            override fun onCreateSuccess(desc: SessionDescription?) {
+                offerBox[0] = desc
+                offerLatch.countDown()
+            }
+            override fun onSetSuccess() = Unit
+            override fun onCreateFailure(error: String?) {
+                offerError[0] = error
+                offerLatch.countDown()
+            }
+            override fun onSetFailure(error: String?) {
+                offerError[0] = error
+                offerLatch.countDown()
+            }
+        }, constraints)
+        offerLatch.await(10, TimeUnit.SECONDS)
+        offerError[0]?.let { error(it) }
+        val offer = offerBox[0] ?: error("Empty offer")
+
+        val setLocalLatch = java.util.concurrent.CountDownLatch(1)
+        val setLocalError = arrayOfNulls<String>(1)
+        pc.setLocalDescription(object : org.webrtc.SdpObserver {
+            override fun onCreateSuccess(p0: SessionDescription?) = Unit
+            override fun onSetSuccess() = setLocalLatch.countDown()
+            override fun onCreateFailure(error: String?) {
+                setLocalError[0] = error
+                setLocalLatch.countDown()
+            }
+            override fun onSetFailure(error: String?) {
+                setLocalError[0] = error
+                setLocalLatch.countDown()
+            }
+        }, offer)
+        setLocalLatch.await(10, TimeUnit.SECONDS)
+        setLocalError[0]?.let { error(it) }
+
+        val request = Request.Builder()
+            .url(whepUrl)
+            .header("Content-Type", "application/sdp")
+            .post(offer.description.toRequestBody("application/sdp".toMediaType()))
+            .build()
+        http.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) error("WHEP HTTP ${response.code}: $body")
+            response.header("Location")?.let { resourceUrl.set(it) }
+            val answer = SessionDescription(SessionDescription.Type.ANSWER, body)
+            val setRemoteLatch = java.util.concurrent.CountDownLatch(1)
+            val setRemoteError = arrayOfNulls<String>(1)
+            pc.setRemoteDescription(object : org.webrtc.SdpObserver {
+                override fun onCreateSuccess(p0: SessionDescription?) = Unit
+                override fun onSetSuccess() = setRemoteLatch.countDown()
+                override fun onCreateFailure(error: String?) {
+                    setRemoteError[0] = error
+                    setRemoteLatch.countDown()
+                }
+                override fun onSetFailure(error: String?) {
+                    setRemoteError[0] = error
+                    setRemoteLatch.countDown()
+                }
+            }, answer)
+            setRemoteLatch.await(10, TimeUnit.SECONDS)
+            setRemoteError[0]?.let { error(it) }
+        }
+    }
+
+    private fun closePeerLocked() {
+        resourceUrl.getAndSet(null)?.let { url ->
+            runCatching {
+                http.newCall(Request.Builder().url(url).delete().build()).execute().close()
+            }
+        }
+        peer?.close()
+        peer?.dispose()
+        peer = null
+    }
+
+    fun release() {
+        executor.execute {
+            closePeerLocked()
+            runCatching { renderer.release() }
+            runCatching { factory.dispose() }
+            runCatching { egl.release() }
+        }
+        executor.shutdown()
+    }
+}
+
+@Composable
+fun WebRtcPlayer(url: String, modifier: Modifier = Modifier) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val session = remember { arrayOfNulls<WhepSession>(1) }
+
+    AndroidView(
+        modifier = modifier,
+        factory = { ctx ->
+            SurfaceViewRenderer(ctx).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                )
+                keepScreenOn = true
+                val created = WhepSession(ctx, this)
+                session[0] = created
+                post { created.play(url) }
+            }
+        },
+        update = { session[0]?.play(url) },
+        onRelease = {
+            session[0]?.release()
+            session[0] = null
+        },
+    )
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> Unit
+                Lifecycle.Event.ON_RESUME -> session[0]?.play(url)
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+}

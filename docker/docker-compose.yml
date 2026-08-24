@@ -5,6 +5,9 @@ services:
     restart: unless-stopped
     ports:
       - "8554:8554"
+      - "8889:8889"
+      - "8189:8189"
+      - "8189:8189/udp"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
 

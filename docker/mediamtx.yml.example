@@ -1,5 +1,5 @@
-# MediaMTX — камера только на сервере.
-# Реальный source берётся из docker/mediamtx.yml (не в git, см. .env CAMERA_RTSP).
+# MediaMTX — камера в LAN, наружу WebRTC (WHEP).
+# Скопируйте в mediamtx.yml и подставьте камеру / IP.
 
 logLevel: info
 
@@ -9,10 +9,17 @@ rtspAddress: :8554
 
 rtmp: false
 hls: false
-webrtc: false
 srt: false
 api: false
 metrics: false
+
+webrtc: true
+webrtcAddress: :8889
+webrtcEncryption: no
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcAdditionalHosts:
+  - 192.168.0.34
 
 paths:
   door:
