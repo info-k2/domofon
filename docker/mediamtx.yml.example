@@ -25,7 +25,7 @@ webrtcAdditionalHosts:
 # При profile full443 MediaMTX тоже ходит в coturn (пароль = TURN_PASSWORD):
 # webrtcICEServers2:
 #   - url: turn:coturn:3478?transport=tcp
-#     username: domofon
+#     username: AUTH_SECRET
 #     password: change-me-turn
 
 paths:

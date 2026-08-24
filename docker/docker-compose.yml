@@ -8,7 +8,7 @@ services:
       - "8189:8189"
       - "8189:8189/udp"
     volumes:
-      - ./mediamtx.yml:/mediamtx.yml:ro
+      - ./${MEDIAMTX_CONFIG:-mediamtx.yml}:/mediamtx.yml:ro
     networks:
       - domofon
 
@@ -66,6 +66,8 @@ services:
       bridge:
         condition: service_started
       mediamtx:
+        condition: service_started
+      coturn:
         condition: service_started
     networks:
       - domofon

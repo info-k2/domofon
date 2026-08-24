@@ -1,0 +1,50 @@
+# Отладка видео по фазам
+
+Сейчас включён VIDEO_MODE=lan — без TURN, без sni-proxy, без :443.
+
+## Фаза 1 — LAN (сейчас)
+
+docker/.env:
+  VIDEO_MODE=lan
+  MEDIAMTX_CONFIG=mediamtx.lan.yml
+
+В приложении адрес моста:
+  http://192.168.0.34:8080
+
+После входа stream = http://192.168.0.34:8080/door/whep
+ICE = прямой (без TURN), logcat: tag DomofonWebRTC
+
+Проверка:
+  docker compose up -d
+  curl http://192.168.0.34:8080/health
+  docker logs mediamtx -f
+
+Цель: стабильное видео без задержки в домашнем Wi‑Fi.
+
+## Фаза 2 — TURN в LAN
+
+docker/.env:
+  VIDEO_MODE=turn
+  MEDIAMTX_CONFIG=mediamtx.yml
+
+Приложение: https://domofon.bitcorepool.i234.me или http://192.168.0.34:8080
+ICE: turn:192.168.0.34:3478 + turns:443
+
+Цель: ICE через coturn, ещё без LTE.
+
+## Фаза 3 — интернет (LTE)
+
+docker/.env:
+  VIDEO_MODE=internet
+
+sni-proxy на NAS:
+  TURN_BACKEND=192.168.0.34:5349
+  DOMOFON_BACKEND=192.168.0.34:8444
+
+Цель: видео с LTE.
+
+## Логи
+
+  docker logs mediamtx -f
+  docker logs domofon-coturn -f
+  adb logcat -s DomofonWebRTC

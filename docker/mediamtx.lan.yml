@@ -1,0 +1,29 @@
+# LAN-отладка: без TURN, прямой WebRTC. См. DEBUG-PHASES.txt
+logLevel: debug
+
+rtsp: true
+rtspTransports: [tcp]
+rtspAddress: :8554
+
+rtmp: false
+hls: false
+srt: false
+api: false
+metrics: false
+
+webrtc: true
+webrtcAddress: :8889
+webrtcEncryption: no
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcHandshakeTimeout: 15s
+webrtcAdditionalHosts:
+  - 192.168.0.34
+
+webrtcICEServers2: []
+
+paths:
+  door:
+    source: rtsp://admin:admin123@192.168.0.130:554/live/ch01_00
+    rtspTransport: tcp
+    sourceOnDemand: false

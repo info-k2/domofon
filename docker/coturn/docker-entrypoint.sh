@@ -9,15 +9,17 @@ set -eu
 
 exec turnserver \
   -n \
+  -v \
   --log-file=stdout \
   --listening-port=3478 \
   --tls-listening-port=5349 \
   --fingerprint \
-  --lt-cred-mech \
+  --use-auth-secret \
+  --static-auth-secret="${TURN_PASSWORD}" \
   --realm="${TURN_REALM}" \
-  --user="${TURN_USER}:${TURN_PASSWORD}" \
-  --external-ip="${EXTERNAL_IP}/${LAN_IP}" \
+  --external-ip="${EXTERNAL_IP}" \
   --cert=/etc/coturn/certs/fullchain.pem \
   --pkey=/etc/coturn/certs/privkey.pem \
   --listening-ip=0.0.0.0 \
-  --relay-ip=0.0.0.0
+  --relay-ip=0.0.0.0 \
+  --allowed-peer-ip=0.0.0.0-255.255.255.255

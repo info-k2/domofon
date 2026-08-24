@@ -1,6 +1,7 @@
 package com.domofon.app.ui
 
 import android.content.Context
+import android.util.Log
 import android.view.ViewGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -28,6 +29,10 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
+private const val TAG = "DomofonWebRTC"
+
+private fun log(msg: String) = Log.d(TAG, msg)
+
 private fun parseIceServers(json: String): List<PeerConnection.IceServer> {
     val out = mutableListOf<PeerConnection.IceServer>()
     val arr = runCatching { JSONArray(json) }.getOrNull() ?: JSONArray()
@@ -54,6 +59,13 @@ private fun parseIceServers(json: String): List<PeerConnection.IceServer> {
     }
     return out
 }
+
+private fun needsRelayOnly(iceServers: List<PeerConnection.IceServer>): Boolean =
+    iceServers.any { server ->
+        server.urls.any { url ->
+            url.startsWith("turns:") && (url.contains(":443") || url.contains("443?"))
+        }
+    }
 
 private class WhepSession(
     context: Context,
@@ -89,34 +101,59 @@ private class WhepSession(
     }
 
     fun play(whepUrl: String) {
-        if (whepUrl.isBlank() || whepUrl == currentUrl) return
+        if (whepUrl.isBlank()) return
+        if (whepUrl == currentUrl) return
+        log("play url=$whepUrl")
         currentUrl = whepUrl
         executor.execute {
             runCatching { connect(whepUrl) }
-                .onFailure { it.printStackTrace() }
+                .onFailure {
+                    log("connect failed: ${it.message}")
+                    it.printStackTrace()
+                }
         }
     }
 
     private fun connect(whepUrl: String) {
         closePeerLocked()
         val iceServers = parseIceServers(iceServersJson)
-        val hasTurn = iceServers.any { server ->
-            server.urls.any { it.startsWith("turn:") || it.startsWith("turns:") }
-        }
+        val relayOnly = needsRelayOnly(iceServers)
+        log(
+            "ICE servers=${iceServers.size} relayOnly=$relayOnly urls=" +
+                iceServers.flatMap { it.urls }.joinToString(),
+        )
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
-            // Через интернет медиа только через TURNS :443 (sni-proxy → coturn).
-            if (hasTurn) {
+            if (relayOnly) {
                 iceTransportsType = PeerConnection.IceTransportsType.RELAY
+                log("iceTransportsType=RELAY (turns:443 / LTE)")
+            } else {
+                log("iceTransportsType=ALL (direct host/prflx)")
             }
         }
         val observer = object : PeerConnection.Observer {
-            override fun onSignalingChange(state: PeerConnection.SignalingState?) = Unit
-            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) = Unit
-            override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
-            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) = Unit
-            override fun onIceCandidate(candidate: org.webrtc.IceCandidate?) = Unit
+            override fun onSignalingChange(state: PeerConnection.SignalingState?) {
+                log("signalingState=$state")
+            }
+
+            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
+                log("iceConnectionState=$state")
+            }
+
+            override fun onIceConnectionReceivingChange(receiving: Boolean) {
+                log("iceReceiving=$receiving")
+            }
+
+            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {
+                log("iceGatheringState=$state")
+            }
+
+            override fun onIceCandidate(candidate: org.webrtc.IceCandidate?) {
+                candidate ?: return
+                log("localCandidate ${candidate.sdpMid}: ${candidate.sdp.take(120)}")
+            }
+
             override fun onIceCandidatesRemoved(candidates: Array<out org.webrtc.IceCandidate>?) = Unit
             override fun onAddStream(stream: org.webrtc.MediaStream?) = Unit
             override fun onRemoveStream(stream: org.webrtc.MediaStream?) = Unit
@@ -127,6 +164,7 @@ private class WhepSession(
                 streams: Array<out org.webrtc.MediaStream>?,
             ) {
                 val track = receiver?.track() as? org.webrtc.VideoTrack ?: return
+                log("videoTrack id=${track.id()} enabled=${track.enabled()}")
                 track.addSink(renderer)
             }
         }
@@ -150,6 +188,7 @@ private class WhepSession(
         val offerLatch = java.util.concurrent.CountDownLatch(1)
         val offerBox = arrayOfNulls<SessionDescription>(1)
         val offerError = arrayOfNulls<String>(1)
+        log("createOffer…")
         pc.createOffer(object : org.webrtc.SdpObserver {
             override fun onCreateSuccess(desc: SessionDescription?) {
                 offerBox[0] = desc
@@ -186,6 +225,7 @@ private class WhepSession(
         setLocalLatch.await(10, TimeUnit.SECONDS)
         setLocalError[0]?.let { error(it) }
 
+        log("WHEP POST $whepUrl")
         val request = Request.Builder()
             .url(whepUrl)
             .header("Content-Type", "application/sdp")
@@ -193,8 +233,12 @@ private class WhepSession(
             .build()
         http.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
+            log("WHEP response HTTP ${response.code} bodyLen=${body.length}")
             if (!response.isSuccessful) error("WHEP HTTP ${response.code}: $body")
-            response.header("Location")?.let { resourceUrl.set(it) }
+            response.header("Location")?.let {
+                resourceUrl.set(it)
+                log("WHEP resource=$it")
+            }
             val answer = SessionDescription(SessionDescription.Type.ANSWER, body)
             val setRemoteLatch = java.util.concurrent.CountDownLatch(1)
             val setRemoteError = arrayOfNulls<String>(1)
@@ -212,11 +256,13 @@ private class WhepSession(
             }, answer)
             setRemoteLatch.await(10, TimeUnit.SECONDS)
             setRemoteError[0]?.let { error(it) }
+            log("remoteDescription set, waiting ICE…")
         }
     }
 
     private fun closePeerLocked() {
         resourceUrl.getAndSet(null)?.let { url ->
+            log("WHEP DELETE $url")
             runCatching {
                 http.newCall(Request.Builder().url(url).delete().build()).execute().close()
             }
@@ -227,6 +273,7 @@ private class WhepSession(
     }
 
     fun release() {
+        log("release")
         executor.execute {
             closePeerLocked()
             runCatching { renderer.release() }

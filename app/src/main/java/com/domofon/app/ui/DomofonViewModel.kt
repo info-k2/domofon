@@ -52,9 +52,11 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
                             bridgeToken = result.apiKey,
                             rtspUrl = result.streamUrl,
                             iceServersJson = result.iceServersJson,
+                            videoMode = result.videoMode,
                         ),
                     )
-                    _messages.emit("Вход выполнен, видео подключено")
+                    val modeHint = result.videoMode.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
+                    _messages.emit("Вход выполнен$modeHint. logcat: DomofonWebRTC")
                 }
                 .onFailure { _messages.emit(it.message ?: "Не удалось войти") }
         }

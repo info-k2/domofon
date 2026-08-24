@@ -1,5 +1,4 @@
-# Edge только домофон. Порт 443 — у отдельного sni-proxy.
-# PWA туда не ходит.
+# Edge только домофон. TURN TLS — напрямую :5349 (sni-proxy → coturn, минуя edge).
 
 worker_processes auto;
 error_log /var/log/nginx/error.log warn;

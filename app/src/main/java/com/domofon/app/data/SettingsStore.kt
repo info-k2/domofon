@@ -17,6 +17,7 @@ data class AppSettings(
     val bridgeUser: String = "",
     val bridgeToken: String = "",
     val iceServersJson: String = "[]",
+    val videoMode: String = "",
     val githubToken: String = "",
 )
 
@@ -26,6 +27,7 @@ class SettingsStore(private val context: Context) {
     private val bridgeUser = stringPreferencesKey("bridge_user")
     private val bridgeToken = stringPreferencesKey("bridge_token")
     private val iceServersJson = stringPreferencesKey("ice_servers_json")
+    private val videoMode = stringPreferencesKey("video_mode")
     private val githubToken = stringPreferencesKey("github_token")
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -35,6 +37,7 @@ class SettingsStore(private val context: Context) {
             bridgeUser = prefs[bridgeUser] ?: "",
             bridgeToken = prefs[bridgeToken] ?: "",
             iceServersJson = prefs[iceServersJson] ?: "[]",
+            videoMode = prefs[videoMode] ?: "",
             githubToken = prefs[githubToken] ?: "",
         )
     }
@@ -46,6 +49,7 @@ class SettingsStore(private val context: Context) {
             prefs[bridgeUser] = value.bridgeUser.trim()
             prefs[bridgeToken] = value.bridgeToken.trim()
             prefs[iceServersJson] = value.iceServersJson.trim().ifBlank { "[]" }
+            prefs[videoMode] = value.videoMode.trim()
             prefs[githubToken] = value.githubToken.trim()
         }
     }
