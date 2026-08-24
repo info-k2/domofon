@@ -1,23 +1,33 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import secrets
+import threading
 from pathlib import Path
 from typing import Any
 
-import httpx
+import paho.mqtt.client as mqtt
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("domofon-bridge")
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 DEVICES_FILE = DATA_DIR / "devices.json"
 API_KEY_FILE = DATA_DIR / "api_key"
-HA_BASE_URL = os.getenv("HA_BASE_URL", "").rstrip("/")
-HA_TOKEN = os.getenv("HA_TOKEN", "")
-HA_ENTITY_ID = os.getenv("HA_ENTITY_ID", "input_button.domofon")
+
 BRIDGE_USER = os.getenv("BRIDGE_USER", "").strip()
 BRIDGE_PASSWORD = os.getenv("BRIDGE_PASSWORD", "").strip()
+
+MQTT_HOST = os.getenv("MQTT_HOST", "").strip()
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_USER = os.getenv("MQTT_USER", "").strip()
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "").strip()
+MQTT_TOPIC_DOOR = os.getenv("MQTT_TOPIC_DOOR", "domofon/door/open")
+MQTT_TOPIC_RING = os.getenv("MQTT_TOPIC_RING", "domofon/ring")
 
 
 def load_or_create_api_key() -> str:
@@ -35,8 +45,11 @@ def load_or_create_api_key() -> str:
 
 
 API_KEY = load_or_create_api_key()
+mqtt_client: mqtt.Client | None = None
+mqtt_lock = threading.Lock()
+last_ring: dict[str, Any] | None = None
 
-app = FastAPI(title="Domofon bridge", version="0.5.0")
+app = FastAPI(title="Domofon bridge", version="0.6.0")
 
 
 class LoginIn(BaseModel):
@@ -56,15 +69,6 @@ def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
         raise HTTPException(401, "Invalid API key")
 
 
-def ha_service(entity_id: str) -> tuple[str, str]:
-    domain = entity_id.split(".", 1)[0] if "." in entity_id else "switch"
-    if domain in {"input_button", "button"}:
-        return domain, "press"
-    if domain == "lock":
-        return domain, "unlock"
-    return domain, "turn_on"
-
-
 def load_devices() -> list[dict[str, Any]]:
     if not DEVICES_FILE.exists():
         return []
@@ -76,9 +80,64 @@ def save_devices(devices: list[dict[str, Any]]) -> None:
     DEVICES_FILE.write_text(json.dumps(devices, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def on_mqtt_connect(client: mqtt.Client, _userdata: Any, _flags: dict[str, Any], reason_code: int, _properties: Any = None) -> None:
+    if reason_code != 0:
+        log.error("MQTT connect failed: %s", reason_code)
+        return
+    client.subscribe(MQTT_TOPIC_RING)
+    log.info("MQTT connected, subscribed to %s", MQTT_TOPIC_RING)
+
+
+def on_mqtt_message(_client: mqtt.Client, _userdata: Any, msg: mqtt.MQTTMessage) -> None:
+    global last_ring
+    payload = msg.payload.decode("utf-8", errors="replace")
+    devices = load_devices()
+    last_ring = {
+        "topic": msg.topic,
+        "payload": payload,
+        "recipients": len(devices),
+    }
+    log.info("Ring via MQTT (%s recipients): %s", len(devices), payload[:120])
+    # FCM push will be wired here later.
+
+
+def start_mqtt() -> mqtt.Client:
+    if not MQTT_HOST:
+        raise RuntimeError("MQTT_HOST is not configured")
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="domofon-bridge")
+    if MQTT_USER:
+        client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+    client.on_connect = on_mqtt_connect
+    client.on_message = on_mqtt_message
+    client.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
+    client.loop_start()
+    return client
+
+
+@app.on_event("startup")
+def startup() -> None:
+    global mqtt_client
+    mqtt_client = start_mqtt()
+
+
+@app.on_event("shutdown")
+def shutdown() -> None:
+    global mqtt_client
+    if mqtt_client is not None:
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+        mqtt_client = None
+
+
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "mqtt": MQTT_HOST,
+        "door_topic": MQTT_TOPIC_DOOR,
+        "ring_topic": MQTT_TOPIC_RING,
+        "last_ring": last_ring,
+    }
 
 
 @app.post("/v1/login")
@@ -93,23 +152,14 @@ def login(body: LoginIn) -> dict[str, str]:
 
 
 @app.post("/v1/door/open")
-async def open_door(_: None = Depends(require_api_key)) -> dict[str, str]:
-    if not HA_BASE_URL or not HA_TOKEN or not HA_ENTITY_ID:
-        raise HTTPException(500, "Home Assistant is not configured")
-    domain, service = ha_service(HA_ENTITY_ID)
-    url = f"{HA_BASE_URL}/api/services/{domain}/{service}"
-    headers = {
-        "Authorization": f"Bearer {HA_TOKEN}",
-        "Content-Type": "application/json",
-    }
-    payload = {"entity_id": HA_ENTITY_ID}
-    try:
-        async with httpx.AsyncClient(timeout=12.0) as client:
-            response = await client.post(url, headers=headers, json=payload)
-    except httpx.HTTPError as exc:
-        raise HTTPException(502, f"Home Assistant unreachable: {exc}") from exc
-    if response.status_code >= 400:
-        raise HTTPException(502, f"Home Assistant HTTP {response.status_code}: {response.text[:180]}")
+def open_door(_: None = Depends(require_api_key)) -> dict[str, str]:
+    if mqtt_client is None:
+        raise HTTPException(503, "MQTT is not connected")
+    payload = json.dumps({"source": "app"})
+    with mqtt_lock:
+        info = mqtt_client.publish(MQTT_TOPIC_DOOR, payload, qos=1)
+    if info.rc != mqtt.MQTT_ERR_SUCCESS:
+        raise HTTPException(502, f"MQTT publish failed: {info.rc}")
     return {"status": "opened"}
 
 
@@ -119,9 +169,3 @@ def register_device(body: DeviceIn, _: None = Depends(require_api_key)) -> dict[
     devices.append({"push_token": body.push_token, "name": body.name})
     save_devices(devices)
     return {"status": "registered", "devices": str(len(devices))}
-
-
-@app.post("/v1/ring")
-def ring(_: None = Depends(require_api_key)) -> dict[str, Any]:
-    devices = load_devices()
-    return {"status": "queued", "recipients": len(devices)}
