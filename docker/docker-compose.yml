@@ -5,20 +5,75 @@ services:
     restart: unless-stopped
     ports:
       - "8554:8554"
-      - "8889:8889"
       - "8189:8189"
       - "8189:8189/udp"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
+    networks:
+      - domofon
 
   bridge:
     build: ./bridge
     container_name: domofon-bridge
     restart: unless-stopped
-    ports:
-      - "8787:8787"
     env_file: .env
     environment:
       DATA_DIR: /data
     volumes:
       - ./bridge-data:/data
+    networks:
+      - domofon
+
+  coturn:
+    image: coturn/coturn:latest
+    container_name: domofon-coturn
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DETECT_EXTERNAL_IP: "false"
+    entrypoint: ["/bin/sh", "/etc/coturn/docker-entrypoint.sh"]
+    volumes:
+      - ./coturn/docker-entrypoint.sh:/etc/coturn/docker-entrypoint.sh:ro
+      - ./certs:/etc/coturn/certs:ro
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      # TLS TURN для sni-proxy на NAS → этот ПК
+      - "5349:5349"
+    networks:
+      - domofon
+      - sni-net
+
+  # HTTPS домофон (:8443 с NAS через sni-proxy; :8080 LAN)
+  edge:
+    image: nginx:1.27-alpine
+    container_name: domofon-edge
+    restart: unless-stopped
+    env_file: .env
+    entrypoint: ["/bin/sh", "/docker-entrypoint-domofon.sh"]
+    ports:
+      - "8080:8080"
+      # 8443 на ПК занят asic-watchdog-caddy → снаружи 8444
+      - "8444:8443"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./nginx/docker-entrypoint.sh:/docker-entrypoint-domofon.sh:ro
+      - ./nginx/nginx.lan.conf:/etc/nginx/nginx.lan.conf:ro
+      - ./nginx/edge.conf.template:/etc/nginx/edge.conf.template:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      bridge:
+        condition: service_started
+      mediamtx:
+        condition: service_started
+    networks:
+      - domofon
+      - sni-net
+
+networks:
+  domofon:
+    driver: bridge
+  sni-net:
+    external: true
+    name: sni-net

@@ -19,4 +19,8 @@ keystore.properties
 docker/.env
 docker/bridge-data/
 docker/mediamtx.yml
+docker/certs/*.pem
+docker/certs/*.key
+docker/certs/*.crt
+!docker/certs/README.txt
 

@@ -20,6 +20,13 @@ webrtcLocalUDPAddress: :8189
 webrtcLocalTCPAddress: :8189
 webrtcAdditionalHosts:
   - 192.168.0.34
+  # - YOUR.PUBLIC.IP
+  # - domofon.example.com
+# При profile full443 MediaMTX тоже ходит в coturn (пароль = TURN_PASSWORD):
+# webrtcICEServers2:
+#   - url: turn:coturn:3478?transport=tcp
+#     username: domofon
+#     password: change-me-turn
 
 paths:
   door:

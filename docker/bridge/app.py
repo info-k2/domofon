@@ -29,6 +29,24 @@ MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "").strip()
 MQTT_TOPIC_DOOR = os.getenv("MQTT_TOPIC_DOOR", "domofon/door/open")
 MQTT_TOPIC_RING = os.getenv("MQTT_TOPIC_RING", "domofon/ring")
 STREAM_URL = os.getenv("STREAM_URL", "").strip()
+TURN_URL = os.getenv("TURN_URL", "").strip()
+TURN_USER = os.getenv("TURN_USER", "").strip()
+TURN_PASSWORD = os.getenv("TURN_PASSWORD", "").strip()
+
+
+def ice_servers() -> list[dict[str, Any]]:
+    servers: list[dict[str, Any]] = [
+        {"urls": ["stun:stun.l.google.com:19302"]},
+    ]
+    if TURN_URL and TURN_USER and TURN_PASSWORD:
+        servers.append(
+            {
+                "urls": [TURN_URL],
+                "username": TURN_USER,
+                "credential": TURN_PASSWORD,
+            }
+        )
+    return servers
 
 
 def load_or_create_api_key() -> str:
@@ -50,7 +68,7 @@ mqtt_client: mqtt.Client | None = None
 mqtt_lock = threading.Lock()
 last_ring: dict[str, Any] | None = None
 
-app = FastAPI(title="Domofon bridge", version="0.6.1")
+app = FastAPI(title="Domofon bridge", version="0.7.0")
 
 
 class LoginIn(BaseModel):
@@ -138,12 +156,13 @@ def health() -> dict[str, Any]:
         "door_topic": MQTT_TOPIC_DOOR,
         "ring_topic": MQTT_TOPIC_RING,
         "stream_url": STREAM_URL or None,
+        "turn": bool(TURN_URL),
         "last_ring": last_ring,
     }
 
 
 @app.post("/v1/login")
-def login(body: LoginIn) -> dict[str, str]:
+def login(body: LoginIn) -> dict[str, Any]:
     if not BRIDGE_USER or not BRIDGE_PASSWORD:
         raise HTTPException(500, "BRIDGE_USER / BRIDGE_PASSWORD are not configured")
     user_ok = secrets.compare_digest(body.username, BRIDGE_USER)
@@ -152,7 +171,11 @@ def login(body: LoginIn) -> dict[str, str]:
         raise HTTPException(401, "Неверный логин или пароль")
     if not STREAM_URL:
         raise HTTPException(500, "STREAM_URL is not configured")
-    return {"api_key": API_KEY, "stream_url": STREAM_URL}
+    return {
+        "api_key": API_KEY,
+        "stream_url": STREAM_URL,
+        "ice_servers": ice_servers(),
+    }
 
 
 @app.post("/v1/door/open")

@@ -51,6 +51,7 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
                         draft.copy(
                             bridgeToken = result.apiKey,
                             rtspUrl = result.streamUrl,
+                            iceServersJson = result.iceServersJson,
                         ),
                     )
                     _messages.emit("Вход выполнен, видео подключено")

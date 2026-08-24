@@ -1,0 +1,3 @@
+*.sh text eol=lf
+docker/nginx/docker-entrypoint.sh text eol=lf
+docker/coturn/docker-entrypoint.sh text eol=lf

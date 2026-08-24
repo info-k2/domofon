@@ -14,6 +14,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
 import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.DefaultVideoEncoderFactory
 import org.webrtc.EglBase
@@ -26,7 +28,38 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
-private class WhepSession(context: Context, private val renderer: SurfaceViewRenderer) {
+private fun parseIceServers(json: String): List<PeerConnection.IceServer> {
+    val out = mutableListOf<PeerConnection.IceServer>()
+    val arr = runCatching { JSONArray(json) }.getOrNull() ?: JSONArray()
+    for (i in 0 until arr.length()) {
+        val item = arr.optJSONObject(i) ?: continue
+        val urls = mutableListOf<String>()
+        when (val raw = item.opt("urls")) {
+            is String -> if (raw.isNotBlank()) urls += raw
+            is JSONArray -> for (j in 0 until raw.length()) {
+                raw.optString(j).takeIf { it.isNotBlank() }?.let { urls += it }
+            }
+        }
+        if (urls.isEmpty()) continue
+        val builder = PeerConnection.IceServer.builder(urls)
+        val user = item.optString("username")
+        val cred = item.optString("credential").ifBlank { item.optString("password") }
+        if (user.isNotBlank() && cred.isNotBlank()) {
+            builder.setUsername(user).setPassword(cred)
+        }
+        out += builder.createIceServer()
+    }
+    if (out.none { it.urls.any { u -> u.startsWith("stun:") } }) {
+        out += PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
+    }
+    return out
+}
+
+private class WhepSession(
+    context: Context,
+    private val renderer: SurfaceViewRenderer,
+    private val iceServersJson: String,
+) {
     private val executor = Executors.newSingleThreadExecutor()
     private val http = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
@@ -66,12 +99,17 @@ private class WhepSession(context: Context, private val renderer: SurfaceViewRen
 
     private fun connect(whepUrl: String) {
         closePeerLocked()
-        val iceServers = listOf(
-            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-        )
+        val iceServers = parseIceServers(iceServersJson)
+        val hasTurn = iceServers.any { server ->
+            server.urls.any { it.startsWith("turn:") || it.startsWith("turns:") }
+        }
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+            // Через интернет медиа только через TURNS :443 (sni-proxy → coturn).
+            if (hasTurn) {
+                iceTransportsType = PeerConnection.IceTransportsType.RELAY
+            }
         }
         val observer = object : PeerConnection.Observer {
             override fun onSignalingChange(state: PeerConnection.SignalingState?) = Unit
@@ -200,9 +238,13 @@ private class WhepSession(context: Context, private val renderer: SurfaceViewRen
 }
 
 @Composable
-fun WebRtcPlayer(url: String, modifier: Modifier = Modifier) {
+fun WebRtcPlayer(
+    url: String,
+    iceServersJson: String = "[]",
+    modifier: Modifier = Modifier,
+) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    val session = remember { arrayOfNulls<WhepSession>(1) }
+    val session = remember(iceServersJson) { arrayOfNulls<WhepSession>(1) }
 
     AndroidView(
         modifier = modifier,
@@ -213,7 +255,7 @@ fun WebRtcPlayer(url: String, modifier: Modifier = Modifier) {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                 )
                 keepScreenOn = true
-                val created = WhepSession(ctx, this)
+                val created = WhepSession(ctx, this, iceServersJson)
                 session[0] = created
                 post { created.play(url) }
             }
@@ -225,7 +267,7 @@ fun WebRtcPlayer(url: String, modifier: Modifier = Modifier) {
         },
     )
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, url, iceServersJson) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> Unit

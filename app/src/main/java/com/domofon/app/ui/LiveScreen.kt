@@ -67,6 +67,7 @@ fun LiveScreen(
             } else {
                 WebRtcPlayer(
                     url = settings.rtspUrl,
+                    iceServersJson = settings.iceServersJson,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
