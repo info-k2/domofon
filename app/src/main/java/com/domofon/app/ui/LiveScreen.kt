@@ -19,7 +19,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,9 +35,12 @@ import com.domofon.app.data.AppSettings
 @Composable
 fun LiveScreen(
     settings: AppSettings,
+    isActive: Boolean,
     onOpenDoor: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
+    var playerError by rememberSaveable { mutableStateOf<String?>(null) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -62,18 +70,35 @@ fun LiveScreen(
                 .background(Color.Black),
             contentAlignment = Alignment.Center,
         ) {
-            if (settings.rtspUrl.isBlank()) {
-                Text("Укажите сервер и войдите — RTSP-ссылка придёт с моста")
-            } else {
-                RtspPlayer(
-                    url = settings.rtspUrl,
-                    modifier = Modifier.fillMaxSize(),
-                )
+            when {
+                !settings.isLoggedIn -> {
+                    Text(
+                        "Войдите в аккаунт в настройках",
+                        color = Color.White,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+                playerError != null -> {
+                    Text(
+                        "Видео: $playerError",
+                        color = Color.White,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+                else -> {
+                    RtspPlayer(
+                        url = settings.rtspUrl,
+                        enabled = isActive,
+                        modifier = Modifier.fillMaxSize(),
+                        onError = { playerError = it },
+                    )
+                }
             }
         }
 
         Button(
             onClick = onOpenDoor,
+            enabled = settings.isLoggedIn,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(64.dp),

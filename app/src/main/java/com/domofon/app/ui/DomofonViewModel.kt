@@ -25,37 +25,51 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
     )
 
     val updateStatus = updater.status
+    val updateOffer = updater.updateOffer
     val releases = updater.releases
     val releasesError = updater.releasesError
 
     private val _messages = MutableSharedFlow<String>()
     val messages = _messages.asSharedFlow()
 
-    fun saveSettings(value: AppSettings) {
-        viewModelScope.launch {
-            store.save(value)
-            _messages.emit("Сохранено")
-            updater.refreshReleases(value.githubToken)
-        }
-    }
-
-    fun refreshReleases(token: String = settings.value.githubToken) {
-        viewModelScope.launch { updater.refreshReleases(token) }
-    }
-
     fun login(draft: AppSettings, password: String) {
         viewModelScope.launch {
             bridge.login(draft.bridgeUrl, draft.bridgeUser, password)
                 .onSuccess { result ->
-                    store.save(
-                        draft.copy(
-                            bridgeToken = result.apiKey,
-                            rtspUrl = result.streamUrl,
-                        ),
+                    val saved = draft.copy(
+                        bridgeToken = result.apiKey,
+                        rtspUrl = result.streamUrl,
+                        githubToken = result.githubToken,
+                        githubRepo = result.githubRepo,
                     )
-                    _messages.emit("Вход выполнен, RTSP: ${result.streamUrl}")
+                    store.save(saved)
+                    updater.checkLatest(result.githubToken, result.githubRepo)
+                    _messages.emit("Вход выполнен")
                 }
                 .onFailure { _messages.emit(it.message ?: "Не удалось войти") }
+        }
+    }
+
+    fun logout() {
+        viewModelScope.launch {
+            val current = settings.value
+            store.save(
+                current.copy(
+                    bridgeToken = "",
+                    rtspUrl = "",
+                    githubToken = "",
+                ),
+            )
+            updater.clearUpdateState()
+            _messages.emit("Вы вышли из аккаунта")
+        }
+    }
+
+    fun loadReleaseHistory() {
+        viewModelScope.launch {
+            val current = settings.value
+            if (!current.isLoggedIn) return@launch
+            updater.loadReleaseHistory(current.githubToken, current.githubRepo)
         }
     }
 
@@ -67,11 +81,25 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun updateApp(apkUrl: String? = null) {
+    fun updateApp() {
         viewModelScope.launch {
-            updater.update(settings.value.githubToken, apkUrl)
+            val current = settings.value
+            val offer = updateOffer.value
+            if (offer == null) {
+                _messages.emit("Обновление недоступно")
+                return@launch
+            }
+            updater.update(current.githubToken, offer.apkUrl)
                 .onSuccess { _messages.emit("Установите скачанное обновление") }
                 .onFailure { _messages.emit(it.message ?: "Обновление не удалось") }
+        }
+    }
+
+    fun checkUpdatesAfterLogin() {
+        viewModelScope.launch {
+            val current = settings.value
+            if (!current.isLoggedIn) return@launch
+            updater.checkLatest(current.githubToken, current.githubRepo)
         }
     }
 }

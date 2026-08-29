@@ -4,7 +4,10 @@ import android.net.Uri
 import android.view.ViewGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -17,7 +20,7 @@ import org.videolan.libvlc.util.VLCVideoLayout
 
 private class VlcSession(context: android.content.Context, layout: VLCVideoLayout) {
     private val lib = LibVLC(
-        context,
+        context.applicationContext,
         arrayListOf(
             "--rtsp-tcp",
             "--network-caching=200",
@@ -34,6 +37,8 @@ private class VlcSession(context: android.content.Context, layout: VLCVideoLayou
     }
     private var currentUrl: String? = null
 
+    fun hasMedia(): Boolean = currentUrl != null
+
     fun play(url: String) {
         if (url.isBlank() || url == currentUrl) return
         currentUrl = url
@@ -45,6 +50,16 @@ private class VlcSession(context: android.content.Context, layout: VLCVideoLayou
         player.media = media
         media.release()
         player.play()
+    }
+
+    fun pause() {
+        runCatching { if (player.isPlaying) player.pause() }
+    }
+
+    fun resume() {
+        runCatching {
+            if (hasMedia() && !player.isPlaying) player.play()
+        }
     }
 
     fun release() {
@@ -59,9 +74,17 @@ private class VlcSession(context: android.content.Context, layout: VLCVideoLayou
 }
 
 @Composable
-fun RtspPlayer(url: String, modifier: Modifier = Modifier) {
+fun RtspPlayer(
+    url: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onError: (String) -> Unit = {},
+) {
+    if (!enabled || url.isBlank()) return
+
     val lifecycleOwner = LocalLifecycleOwner.current
     val session = remember { arrayOfNulls<VlcSession>(1) }
+    var initError by remember(url) { mutableStateOf<String?>(null) }
 
     AndroidView(
         modifier = modifier,
@@ -72,23 +95,36 @@ fun RtspPlayer(url: String, modifier: Modifier = Modifier) {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                 )
                 keepScreenOn = true
-                val created = VlcSession(ctx, this)
-                session[0] = created
-                post { created.play(url) }
+                runCatching {
+                    val created = VlcSession(ctx, this)
+                    session[0] = created
+                    post { runCatching { created.play(url) }.onFailure { initError = it.message } }
+                }.onFailure {
+                    initError = it.message ?: "Не удалось запустить видеоплеер"
+                    onError(initError!!)
+                }
             }
         },
-        update = { session[0]?.play(url) },
+        update = { view ->
+            if (initError == null) {
+                runCatching { session[0]?.play(url) }
+                    .onFailure {
+                        initError = it.message
+                        onError(it.message ?: "Ошибка воспроизведения")
+                    }
+            }
+        },
         onRelease = {
             session[0]?.release()
             session[0] = null
         },
     )
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, url) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_PAUSE -> session[0]?.player?.pause()
-                Lifecycle.Event.ON_RESUME -> session[0]?.player?.play()
+                Lifecycle.Event.ON_PAUSE -> session[0]?.pause()
+                Lifecycle.Event.ON_RESUME -> session[0]?.resume()
                 else -> Unit
             }
         }

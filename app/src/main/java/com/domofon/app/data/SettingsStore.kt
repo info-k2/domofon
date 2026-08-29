@@ -17,7 +17,10 @@ data class AppSettings(
     val bridgeUser: String = "",
     val bridgeToken: String = "",
     val githubToken: String = "",
-)
+    val githubRepo: String = AppConfig.GITHUB_REPO,
+) {
+    val isLoggedIn: Boolean get() = bridgeToken.isNotBlank()
+}
 
 class SettingsStore(private val context: Context) {
     private val rtspUrl = stringPreferencesKey("rtsp_url")
@@ -25,6 +28,7 @@ class SettingsStore(private val context: Context) {
     private val bridgeUser = stringPreferencesKey("bridge_user")
     private val bridgeToken = stringPreferencesKey("bridge_token")
     private val githubToken = stringPreferencesKey("github_token")
+    private val githubRepo = stringPreferencesKey("github_repo")
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         AppSettings(
@@ -33,6 +37,7 @@ class SettingsStore(private val context: Context) {
             bridgeUser = prefs[bridgeUser] ?: "",
             bridgeToken = prefs[bridgeToken] ?: "",
             githubToken = prefs[githubToken] ?: "",
+            githubRepo = prefs[githubRepo] ?: AppConfig.GITHUB_REPO,
         )
     }
 
@@ -43,6 +48,7 @@ class SettingsStore(private val context: Context) {
             prefs[bridgeUser] = value.bridgeUser.trim()
             prefs[bridgeToken] = value.bridgeToken.trim()
             prefs[githubToken] = value.githubToken.trim()
+            prefs[githubRepo] = value.githubRepo.trim().ifBlank { AppConfig.GITHUB_REPO }
         }
     }
 }

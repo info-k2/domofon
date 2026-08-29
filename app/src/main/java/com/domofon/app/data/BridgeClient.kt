@@ -20,7 +20,7 @@ class BridgeClient(
         val key = settings.bridgeToken
         if (base.isBlank() || key.isBlank()) {
             return@withContext Result.failure(
-                IllegalStateException("Войдите на сервер в настройках"),
+                IllegalStateException("Войдите в аккаунт в настройках"),
             )
         }
         val request = Request.Builder()
@@ -42,7 +42,7 @@ class BridgeClient(
         withContext(Dispatchers.IO) {
             val base = bridgeUrl.trim().trimEnd('/')
             if (base.isBlank()) {
-                return@withContext Result.failure(IllegalStateException("Укажите адрес моста"))
+                return@withContext Result.failure(IllegalStateException("Укажите адрес сервера"))
             }
             if (username.isBlank() || password.isBlank()) {
                 return@withContext Result.failure(IllegalStateException("Введите логин и пароль"))
@@ -65,7 +65,13 @@ class BridgeClient(
                     val stream = parsed.optString("stream_url")
                     if (key.isBlank()) error("Мост не вернул ключ")
                     if (stream.isBlank()) error("Мост не вернул RTSP-ссылку")
-                    LoginResult(apiKey = key, streamUrl = stream)
+                    LoginResult(
+                        apiKey = key,
+                        streamUrl = stream,
+                        githubToken = parsed.optString("github_token"),
+                        githubRepo = parsed.optString("github_repo")
+                            .ifBlank { AppConfig.GITHUB_REPO },
+                    )
                 }
             }
         }

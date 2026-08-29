@@ -30,6 +30,8 @@ MQTT_TOPIC_DOOR = os.getenv("MQTT_TOPIC_DOOR", "domofon/door/open")
 MQTT_TOPIC_RING = os.getenv("MQTT_TOPIC_RING", "domofon/ring")
 STREAM_URL = os.getenv("STREAM_URL", "").strip()
 LAN_IP = os.getenv("LAN_IP", "").strip()
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
+GITHUB_REPO = os.getenv("GITHUB_REPO", "info-k2/domofon").strip()
 
 
 def stream_url_for_login() -> str:
@@ -164,6 +166,8 @@ def login(body: LoginIn) -> dict[str, Any]:
     return {
         "api_key": API_KEY,
         "stream_url": url,
+        "github_token": GITHUB_TOKEN,
+        "github_repo": GITHUB_REPO,
     }
 
 
