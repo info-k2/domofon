@@ -1,5 +1,5 @@
-# MediaMTX — камера в LAN, наружу WebRTC (WHEP).
-# Скопируйте в mediamtx.yml и подставьте камеру / IP.
+# MediaMTX — RTSP-ретранслятор камеры.
+# Скопируйте в mediamtx.yml и подставьте камеру.
 
 logLevel: info
 
@@ -10,27 +10,12 @@ rtspAddress: :8554
 rtmp: false
 hls: false
 srt: false
+webrtc: false
 api: false
 metrics: false
-
-webrtc: true
-webrtcAddress: :8889
-webrtcEncryption: no
-webrtcLocalUDPAddress: :8189
-webrtcLocalTCPAddress: :8189
-webrtcAdditionalHosts:
-  - 192.168.0.34
-  # - YOUR.PUBLIC.IP
-  # - domofon.example.com
-# При profile full443 MediaMTX тоже ходит в coturn (пароль = TURN_PASSWORD):
-# webrtcICEServers2:
-#   - url: turn:coturn:3478?transport=tcp
-#     username: AUTH_SECRET
-#     password: change-me-turn
 
 paths:
   door:
     source: rtsp://USER:PASSWORD@192.168.0.130:554/live/ch01_00
     rtspTransport: tcp
-    sourceOnDemand: true
-    sourceOnDemandStartTimeout: 10s
+    sourceOnDemand: false

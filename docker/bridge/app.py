@@ -29,18 +29,15 @@ MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "").strip()
 MQTT_TOPIC_DOOR = os.getenv("MQTT_TOPIC_DOOR", "domofon/door/open")
 MQTT_TOPIC_RING = os.getenv("MQTT_TOPIC_RING", "domofon/ring")
 STREAM_URL = os.getenv("STREAM_URL", "").strip()
-STREAM_URL_LAN = os.getenv("STREAM_URL_LAN", "").strip()
 LAN_IP = os.getenv("LAN_IP", "").strip()
 
 
 def stream_url_for_login() -> str:
-    if STREAM_URL_LAN:
-        return STREAM_URL_LAN
     if STREAM_URL:
         return STREAM_URL
     if LAN_IP:
         return f"rtsp://{LAN_IP}:8554/door"
-    raise HTTPException(500, "STREAM_URL or STREAM_URL_LAN or LAN_IP is not configured")
+    raise HTTPException(500, "STREAM_URL or LAN_IP is not configured")
 
 
 def load_or_create_api_key() -> str:
@@ -143,7 +140,7 @@ def shutdown() -> None:
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    url = stream_url_for_login() if (STREAM_URL or STREAM_URL_LAN or LAN_IP) else None
+    url = stream_url_for_login() if (STREAM_URL or LAN_IP) else None
     return {
         "status": "ok",
         "stream_url": url,
