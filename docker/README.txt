@@ -5,6 +5,11 @@ Domofon Docker — RTSP + MQTT-мост
   bridge    — API входа, открытие двери через MQTT
   edge      — nginx :8080 → bridge (/health, /v1/*)
 
+Папки:
+  bridge/       — код моста
+  bridge-data/  — данные моста (ключи, устройства), создаётся автоматически
+  nginx/        — конфиг reverse proxy
+
 Быстрый старт:
   1. cp mediamtx.yml.example mediamtx.yml   # камера
   2. cp .env.example .env                   # MQTT, пароли, STREAM_URL
