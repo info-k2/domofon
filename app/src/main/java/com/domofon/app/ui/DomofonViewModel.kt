@@ -51,12 +51,9 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
                         draft.copy(
                             bridgeToken = result.apiKey,
                             rtspUrl = result.streamUrl,
-                            iceServersJson = result.iceServersJson,
-                            videoMode = result.videoMode,
                         ),
                     )
-                    val modeHint = result.videoMode.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
-                    _messages.emit("Вход выполнен$modeHint. logcat: DomofonWebRTC")
+                    _messages.emit("Вход выполнен, RTSP: ${result.streamUrl}")
                 }
                 .onFailure { _messages.emit(it.message ?: "Не удалось войти") }
         }

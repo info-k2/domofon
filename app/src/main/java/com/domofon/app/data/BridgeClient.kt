@@ -63,16 +63,9 @@ class BridgeClient(
                     val parsed = JSONObject(body)
                     val key = parsed.optString("api_key")
                     val stream = parsed.optString("stream_url")
-                    val ice = parsed.optJSONArray("ice_servers")?.toString() ?: "[]"
-                    val videoMode = parsed.optString("video_mode")
                     if (key.isBlank()) error("Мост не вернул ключ")
-                    if (stream.isBlank()) error("Мост не вернул ссылку на видео")
-                    LoginResult(
-                        apiKey = key,
-                        streamUrl = stream,
-                        iceServersJson = ice,
-                        videoMode = videoMode,
-                    )
+                    if (stream.isBlank()) error("Мост не вернул RTSP-ссылку")
+                    LoginResult(apiKey = key, streamUrl = stream)
                 }
             }
         }

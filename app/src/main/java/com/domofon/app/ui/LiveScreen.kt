@@ -63,11 +63,10 @@ fun LiveScreen(
             contentAlignment = Alignment.Center,
         ) {
             if (settings.rtspUrl.isBlank()) {
-                Text("Укажите сервер и войдите — ссылка на видео придёт с моста")
+                Text("Укажите сервер и войдите — RTSP-ссылка придёт с моста")
             } else {
-                WebRtcPlayer(
+                RtspPlayer(
                     url = settings.rtspUrl,
-                    iceServersJson = settings.iceServersJson,
                     modifier = Modifier.fillMaxSize(),
                 )
             }

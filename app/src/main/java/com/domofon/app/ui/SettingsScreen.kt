@@ -84,16 +84,10 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                buildString {
-                    if (current.rtspUrl.isNotBlank()) {
-                        append("Видео: ${current.rtspUrl}")
-                    } else {
-                        append("Видео появится после входа (WebRTC с сервера)")
-                    }
-                    if (current.videoMode.isNotBlank()) {
-                        append("\nРежим: ${current.videoMode}")
-                    }
-                    append("\nОтладка: adb logcat -s DomofonWebRTC")
+                if (current.rtspUrl.isNotBlank()) {
+                    "RTSP: ${current.rtspUrl}"
+                } else {
+                    "RTSP-ссылка появится после входа (с сервера)"
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -103,9 +97,7 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Адрес Docker-моста") },
                 placeholder = { Text("http://192.168.0.34:8080") },
-                supportingText = {
-                    Text("Фаза 1 LAN: http://192.168.0.34:8080. Интернет: https://domofon…")
-                },
+                supportingText = { Text("Домашний IP, белый IP или домен") },
                 singleLine = true,
             )
             OutlinedTextField(

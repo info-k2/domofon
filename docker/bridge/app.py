@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
 import json
 import logging
 import os
 import secrets
 import threading
-import time
 from pathlib import Path
 from typing import Any
 
@@ -34,57 +30,17 @@ MQTT_TOPIC_DOOR = os.getenv("MQTT_TOPIC_DOOR", "domofon/door/open")
 MQTT_TOPIC_RING = os.getenv("MQTT_TOPIC_RING", "domofon/ring")
 STREAM_URL = os.getenv("STREAM_URL", "").strip()
 STREAM_URL_LAN = os.getenv("STREAM_URL_LAN", "").strip()
-VIDEO_MODE = os.getenv("VIDEO_MODE", "internet").strip().lower()
-TURN_URL = os.getenv("TURN_URL", "").strip()
-TURN_USER = os.getenv("TURN_USER", "").strip()
-TURN_PASSWORD = os.getenv("TURN_PASSWORD", "").strip()
+LAN_IP = os.getenv("LAN_IP", "").strip()
 
 
-def turn_rest_credentials(username: str, secret: str, ttl: int = 86_400) -> tuple[str, str]:
-    """Coturn use-auth-secret: username = expiry:user, credential = base64(hmac-sha1)."""
-    expiry = int(time.time()) + ttl
-    turn_user = f"{expiry}:{username}"
-    digest = hmac.new(secret.encode(), turn_user.encode(), hashlib.sha1).digest()
-    return turn_user, base64.b64encode(digest).decode()
-
-
-def stream_url_for_mode() -> str:
-    if VIDEO_MODE == "lan":
-        lan = STREAM_URL_LAN or (
-            f"http://{os.getenv('LAN_IP', '').strip()}:8080/door/whep"
-            if os.getenv("LAN_IP", "").strip()
-            else ""
-        )
-        if not lan:
-            raise HTTPException(500, "STREAM_URL_LAN or LAN_IP is not configured")
-        return lan
-    if not STREAM_URL:
-        raise HTTPException(500, "STREAM_URL is not configured")
-    return STREAM_URL
-
-
-def ice_servers() -> list[dict[str, Any]]:
-    if VIDEO_MODE == "lan":
-        log.info("video_mode=lan: direct WebRTC, no TURN")
-        return [{"urls": ["stun:stun.l.google.com:19302"]}]
-
-    servers: list[dict[str, Any]] = [
-        {"urls": ["stun:stun.l.google.com:19302"]},
-    ]
-    if not (TURN_URL and TURN_USER and TURN_PASSWORD):
-        return servers
-
-    turn_user, turn_cred = turn_rest_credentials(TURN_USER, TURN_PASSWORD)
-    turn_entry = {"username": turn_user, "credential": turn_cred}
-
-    lan_ip = os.getenv("LAN_IP", "").strip()
-    if VIDEO_MODE in ("turn", "internet") and lan_ip:
-        servers.append({**turn_entry, "urls": [f"turn:{lan_ip}:3478?transport=tcp"]})
-    if VIDEO_MODE == "internet":
-        servers.append({**turn_entry, "urls": [TURN_URL]})
-
-    log.info("video_mode=%s ice_servers=%s", VIDEO_MODE, len(servers))
-    return servers
+def stream_url_for_login() -> str:
+    if STREAM_URL_LAN:
+        return STREAM_URL_LAN
+    if STREAM_URL:
+        return STREAM_URL
+    if LAN_IP:
+        return f"rtsp://{LAN_IP}:8554/door"
+    raise HTTPException(500, "STREAM_URL or STREAM_URL_LAN or LAN_IP is not configured")
 
 
 def load_or_create_api_key() -> str:
@@ -106,7 +62,7 @@ mqtt_client: mqtt.Client | None = None
 mqtt_lock = threading.Lock()
 last_ring: dict[str, Any] | None = None
 
-app = FastAPI(title="Domofon bridge", version="0.7.0")
+app = FastAPI(title="Domofon bridge", version="0.8.4")
 
 
 class LoginIn(BaseModel):
@@ -155,7 +111,6 @@ def on_mqtt_message(_client: mqtt.Client, _userdata: Any, msg: mqtt.MQTTMessage)
         "recipients": len(devices),
     }
     log.info("Ring via MQTT (%s recipients): %s", len(devices), payload[:120])
-    # FCM push will be wired here later.
 
 
 def start_mqtt() -> mqtt.Client:
@@ -188,14 +143,13 @@ def shutdown() -> None:
 
 @app.get("/health")
 def health() -> dict[str, Any]:
+    url = stream_url_for_login() if (STREAM_URL or STREAM_URL_LAN or LAN_IP) else None
     return {
         "status": "ok",
-        "video_mode": VIDEO_MODE,
+        "stream_url": url,
         "mqtt": MQTT_HOST,
         "door_topic": MQTT_TOPIC_DOOR,
         "ring_topic": MQTT_TOPIC_RING,
-        "stream_url": stream_url_for_mode() if STREAM_URL or STREAM_URL_LAN else None,
-        "turn": bool(TURN_URL) and VIDEO_MODE != "lan",
         "last_ring": last_ring,
     }
 
@@ -208,12 +162,11 @@ def login(body: LoginIn) -> dict[str, Any]:
     pass_ok = secrets.compare_digest(body.password, BRIDGE_PASSWORD)
     if not (user_ok and pass_ok):
         raise HTTPException(401, "Неверный логин или пароль")
-    url = stream_url_for_mode()
+    url = stream_url_for_login()
+    log.info("login stream_url=%s", url)
     return {
         "api_key": API_KEY,
         "stream_url": url,
-        "video_mode": VIDEO_MODE,
-        "ice_servers": ice_servers(),
     }
 
 
