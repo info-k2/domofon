@@ -17,8 +17,10 @@ services:
     env_file: .env
     environment:
       DATA_DIR: /data
+      APK_DIR: /data/apk
     volumes:
       - ./bridge-data:/data
+      - ./apk:/data/apk:ro
     networks:
       - domofon
 

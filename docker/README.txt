@@ -7,7 +7,8 @@ Domofon Docker — RTSP + MQTT-мост
 
 Папки:
   bridge/       — код моста
-  bridge-data/  — данные моста (ключи, устройства), создаётся автоматически
+  bridge-data/  — данные моста (ключи, устройства)
+  apk/          — domofon.apk для обновления приложения
   nginx/        — конфиг reverse proxy
 
 Быстрый старт:
@@ -21,3 +22,9 @@ Domofon Docker — RTSP + MQTT-мост
 
 Интернет (опционально):
   Проброс на роутере: 8080 (API), 8554/TCP (RTSP)
+
+Обновление приложения:
+  1. Скопируйте APK: docker/apk/domofon.apk
+  2. В .env: APP_VERSION, APP_VERSION_CODE, APP_PUBLIC_URL
+  3. docker compose restart bridge
+  Приложение после входа само предложит обновление.

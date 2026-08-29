@@ -1,9 +1,7 @@
 package com.domofon.app.ui
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -22,7 +20,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,7 +31,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.domofon.app.BuildConfig
 import com.domofon.app.data.AppSettings
-import com.domofon.app.data.GithubRelease
 import com.domofon.app.data.UpdateOffer
 import com.domofon.app.data.UpdateStatus
 
@@ -44,18 +40,14 @@ fun SettingsScreen(
     current: AppSettings,
     updateStatus: UpdateStatus,
     updateOffer: UpdateOffer?,
-    releases: List<GithubRelease>,
-    releasesError: String?,
     onLogin: (AppSettings, String) -> Unit,
     onLogout: () -> Unit,
-    onLoadReleaseHistory: () -> Unit,
     onUpdate: () -> Unit,
     onBack: () -> Unit,
 ) {
     var bridgeUrl by rememberSaveable(current.bridgeUrl) { mutableStateOf(current.bridgeUrl) }
     var bridgeUser by rememberSaveable(current.bridgeUser) { mutableStateOf(current.bridgeUser) }
     var bridgePassword by rememberSaveable { mutableStateOf("") }
-    var showAllVersions by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -84,18 +76,9 @@ fun SettingsScreen(
                     "Вы вошли как ${current.bridgeUser.ifBlank { "пользователь" }}",
                     style = MaterialTheme.typography.bodyLarge,
                 )
-                Text(
-                    "Сервер: ${current.bridgeUrl}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Text(
-                    "RTSP: ${current.rtspUrl}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                OutlinedButton(
-                    onClick = onLogout,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
+                Text("Сервер: ${current.bridgeUrl}", style = MaterialTheme.typography.bodySmall)
+                Text("RTSP: ${current.rtspUrl}", style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
                     Text("Выйти")
                 }
             } else {
@@ -179,7 +162,7 @@ fun SettingsScreen(
                     }
                     else -> {
                         Text(
-                            "У вас последняя версия",
+                            "У вас последняя версия с сервера",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -191,58 +174,12 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-
-                TextButton(
-                    onClick = {
-                        showAllVersions = !showAllVersions
-                        if (showAllVersions && releases.isEmpty()) {
-                            onLoadReleaseHistory()
-                        }
-                    },
-                ) {
-                    Text(if (showAllVersions) "Скрыть все версии" else "Все версии")
-                }
-
-                AnimatedVisibility(visible = showAllVersions) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (releasesError != null && releases.isEmpty()) {
-                            Text(releasesError, color = MaterialTheme.colorScheme.error)
-                        } else if (releases.isEmpty()) {
-                            Text("Загрузка…", style = MaterialTheme.typography.bodySmall)
-                        } else {
-                            releases.forEach { release ->
-                                Row(modifier = Modifier.fillMaxWidth()) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(release.title.ifBlank { release.tag })
-                                        Text(
-                                            listOf(release.tag, release.publishedAt)
-                                                .filter { it.isNotBlank() }
-                                                .joinToString(" · "),
-                                            style = MaterialTheme.typography.bodySmall,
-                                        )
-                                    }
-                                    if (release.apkUrl != null &&
-                                        formatVersion(release.tag) != BuildConfig.VERSION_NAME
-                                    ) {
-                                        Text(
-                                            "архив",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.outline,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
             } else {
                 Text(
-                    "Войдите, чтобы проверить обновления",
+                    "Войдите — обновление качается с вашего сервера",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
         }
     }
 }
-
-private fun formatVersion(tag: String): String = tag.removePrefix("v").removePrefix("V")

@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any
 
 import paho.mqtt.client as mqtt
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +19,8 @@ log = logging.getLogger("domofon-bridge")
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 DEVICES_FILE = DATA_DIR / "devices.json"
 API_KEY_FILE = DATA_DIR / "api_key"
+APK_DIR = Path(os.getenv("APK_DIR", "/data/apk"))
+APK_FILE = APK_DIR / "domofon.apk"
 
 BRIDGE_USER = os.getenv("BRIDGE_USER", "").strip()
 BRIDGE_PASSWORD = os.getenv("BRIDGE_PASSWORD", "").strip()
@@ -30,8 +33,9 @@ MQTT_TOPIC_DOOR = os.getenv("MQTT_TOPIC_DOOR", "domofon/door/open")
 MQTT_TOPIC_RING = os.getenv("MQTT_TOPIC_RING", "domofon/ring")
 STREAM_URL = os.getenv("STREAM_URL", "").strip()
 LAN_IP = os.getenv("LAN_IP", "").strip()
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
-GITHUB_REPO = os.getenv("GITHUB_REPO", "info-k2/domofon").strip()
+APP_PUBLIC_URL = os.getenv("APP_PUBLIC_URL", "").strip().rstrip("/")
+APP_VERSION = os.getenv("APP_VERSION", "").strip()
+APP_VERSION_CODE = int(os.getenv("APP_VERSION_CODE", "0") or "0")
 
 
 def stream_url_for_login() -> str:
@@ -40,6 +44,23 @@ def stream_url_for_login() -> str:
     if LAN_IP:
         return f"rtsp://{LAN_IP}:8554/door"
     raise HTTPException(500, "STREAM_URL or LAN_IP is not configured")
+
+
+def public_base_url(request: Request) -> str:
+    if APP_PUBLIC_URL:
+        return APP_PUBLIC_URL
+    return str(request.base_url).rstrip("/")
+
+
+def app_update_payload(request: Request) -> dict[str, Any] | None:
+    if not APP_VERSION or APP_VERSION_CODE <= 0 or not APK_FILE.is_file():
+        return None
+    base = public_base_url(request)
+    return {
+        "version": APP_VERSION,
+        "version_code": APP_VERSION_CODE,
+        "apk_url": f"{base}/v1/app/apk",
+    }
 
 
 def load_or_create_api_key() -> str:
@@ -61,7 +82,7 @@ mqtt_client: mqtt.Client | None = None
 mqtt_lock = threading.Lock()
 last_ring: dict[str, Any] | None = None
 
-app = FastAPI(title="Domofon bridge", version="0.8.4")
+app = FastAPI(title="Domofon bridge", version="0.8.6")
 
 
 class LoginIn(BaseModel):
@@ -129,6 +150,10 @@ def start_mqtt() -> mqtt.Client:
 def startup() -> None:
     global mqtt_client
     mqtt_client = start_mqtt()
+    if APK_FILE.is_file() and APP_VERSION:
+        log.info("App update: %s (%s) -> %s", APP_VERSION, APP_VERSION_CODE, APK_FILE)
+    else:
+        log.info("App update: APK not configured")
 
 
 @app.on_event("shutdown")
@@ -141,11 +166,13 @@ def shutdown() -> None:
 
 
 @app.get("/health")
-def health() -> dict[str, Any]:
+def health(request: Request) -> dict[str, Any]:
     url = stream_url_for_login() if (STREAM_URL or LAN_IP) else None
+    update = app_update_payload(request)
     return {
         "status": "ok",
         "stream_url": url,
+        "app_update": update is not None,
         "mqtt": MQTT_HOST,
         "door_topic": MQTT_TOPIC_DOOR,
         "ring_topic": MQTT_TOPIC_RING,
@@ -154,7 +181,7 @@ def health() -> dict[str, Any]:
 
 
 @app.post("/v1/login")
-def login(body: LoginIn) -> dict[str, Any]:
+def login(body: LoginIn, request: Request) -> dict[str, Any]:
     if not BRIDGE_USER or not BRIDGE_PASSWORD:
         raise HTTPException(500, "BRIDGE_USER / BRIDGE_PASSWORD are not configured")
     user_ok = secrets.compare_digest(body.username, BRIDGE_USER)
@@ -163,12 +190,33 @@ def login(body: LoginIn) -> dict[str, Any]:
         raise HTTPException(401, "Неверный логин или пароль")
     url = stream_url_for_login()
     log.info("login stream_url=%s", url)
-    return {
+    payload: dict[str, Any] = {
         "api_key": API_KEY,
         "stream_url": url,
-        "github_token": GITHUB_TOKEN,
-        "github_repo": GITHUB_REPO,
     }
+    update = app_update_payload(request)
+    if update:
+        payload["app_update"] = update
+    return payload
+
+
+@app.get("/v1/app/update")
+def app_update(request: Request, _: None = Depends(require_api_key)) -> dict[str, Any]:
+    update = app_update_payload(request)
+    if not update:
+        raise HTTPException(404, "APK update is not configured on the server")
+    return update
+
+
+@app.get("/v1/app/apk")
+def app_apk(_: None = Depends(require_api_key)) -> FileResponse:
+    if not APK_FILE.is_file():
+        raise HTTPException(404, "APK file not found")
+    return FileResponse(
+        APK_FILE,
+        media_type="application/vnd.android.package-archive",
+        filename="domofon.apk",
+    )
 
 
 @app.post("/v1/door/open")

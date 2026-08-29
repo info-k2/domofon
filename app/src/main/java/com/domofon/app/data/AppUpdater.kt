@@ -11,19 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
-import java.util.concurrent.TimeUnit
-
-data class GithubRelease(
-    val tag: String,
-    val title: String,
-    val publishedAt: String,
-    val apkUrl: String?,
-)
 
 data class UpdateOffer(
     val version: String,
@@ -39,12 +27,7 @@ sealed interface UpdateStatus {
 
 class AppUpdater(
     private val app: Application,
-    private val http: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.MINUTES)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build(),
+    private val bridge: BridgeClient = BridgeClient(),
 ) {
     private val _status = MutableStateFlow<UpdateStatus>(UpdateStatus.Idle)
     val status = _status.asStateFlow()
@@ -52,47 +35,28 @@ class AppUpdater(
     private val _updateOffer = MutableStateFlow<UpdateOffer?>(null)
     val updateOffer = _updateOffer.asStateFlow()
 
-    private val _releases = MutableStateFlow<List<GithubRelease>>(emptyList())
-    val releases = _releases.asStateFlow()
-
-    private val _releasesError = MutableStateFlow<String?>(null)
-    val releasesError = _releasesError.asStateFlow()
-
     fun clearUpdateState() {
         _updateOffer.value = null
-        _releases.value = emptyList()
-        _releasesError.value = null
         _status.value = UpdateStatus.Idle
     }
 
-    suspend fun checkLatest(token: String, repo: String = AppConfig.GITHUB_REPO): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                _status.value = UpdateStatus.Checking
-                val latest = fetchLatestRelease(token, repo)
-                _updateOffer.value = if (isNewer(latest.tag)) {
-                    UpdateOffer(version = formatVersion(latest.tag), apkUrl = latest.apkUrl!!)
-                } else {
-                    null
-                }
-            }.onFailure {
-                _updateOffer.value = null
-            }.also {
-                _status.value = UpdateStatus.Idle
-            }.map { }
-        }
+    suspend fun checkLatest(settings: AppSettings): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            _status.value = UpdateStatus.Checking
+            val info = bridge.fetchUpdate(settings).getOrThrow()
+            _updateOffer.value = if (info != null && isNewer(info.versionCode)) {
+                UpdateOffer(version = info.version, apkUrl = info.apkUrl)
+            } else {
+                null
+            }
+        }.onFailure {
+            _updateOffer.value = null
+        }.also {
+            _status.value = UpdateStatus.Idle
+        }.map { }
+    }
 
-    suspend fun loadReleaseHistory(token: String, repo: String = AppConfig.GITHUB_REPO): Result<List<GithubRelease>> =
-        withContext(Dispatchers.IO) {
-            runCatching { fetchReleases(token, repo) }
-                .onSuccess {
-                    _releases.value = it
-                    _releasesError.value = null
-                }
-                .onFailure { _releasesError.value = it.message }
-        }
-
-    suspend fun update(token: String, apkUrl: String): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun update(settings: AppSettings, apkUrl: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                 !app.packageManager.canRequestPackageInstalls()
@@ -108,111 +72,13 @@ class AppUpdater(
 
             _status.value = UpdateStatus.Checking
             val file = File(app.cacheDir, "domofon-update.apk")
-            download(apkUrl, token, file)
+            bridge.downloadApk(settings, apkUrl, file) { percent ->
+                _status.value = UpdateStatus.Downloading(percent)
+            }.getOrThrow()
             _status.value = UpdateStatus.ReadyToInstall
             install(file)
         }.also {
             _status.value = UpdateStatus.Idle
-        }
-    }
-
-    private fun fetchLatestRelease(token: String, repo: String): GithubRelease {
-        val request = githubRequest(
-            "https://api.github.com/repos/$repo/releases/latest",
-            token,
-        )
-        http.newCall(request).execute().use { response ->
-            if (response.code == 404) error("На GitHub ещё нет Release с APK")
-            if (response.code == 401 || response.code == 403) {
-                error("Нет доступа к репозиторию обновлений")
-            }
-            if (!response.isSuccessful) error("GitHub: HTTP ${response.code}")
-            val json = JSONObject(response.body!!.string())
-            val release = jsonToRelease(json)
-            if (release.apkUrl.isNullOrBlank()) error("В последнем релизе нет APK")
-            return release
-        }
-    }
-
-    private fun fetchReleases(token: String, repo: String): List<GithubRelease> {
-        val request = githubRequest(
-            "https://api.github.com/repos/$repo/releases?per_page=20",
-            token,
-        )
-        http.newCall(request).execute().use { response ->
-            if (response.code == 404) error("Релизов ещё нет")
-            if (response.code == 401 || response.code == 403) {
-                error("Нет доступа к репозиторию обновлений")
-            }
-            if (!response.isSuccessful) error("GitHub: HTTP ${response.code}")
-            val array = JSONArray(response.body!!.string())
-            val result = mutableListOf<GithubRelease>()
-            for (i in 0 until array.length()) {
-                result += jsonToRelease(array.getJSONObject(i))
-            }
-            return result
-        }
-    }
-
-    private fun jsonToRelease(json: JSONObject): GithubRelease =
-        GithubRelease(
-            tag = json.optString("tag_name"),
-            title = json.optString("name").ifBlank { json.optString("tag_name") },
-            publishedAt = json.optString("published_at").take(10),
-            apkUrl = apkUrlFrom(json),
-        )
-
-    private fun apkUrlFrom(json: JSONObject): String? {
-        val assets = json.optJSONArray("assets") ?: return null
-        for (i in 0 until assets.length()) {
-            val asset = assets.getJSONObject(i)
-            if (asset.getString("name").endsWith(".apk", ignoreCase = true)) {
-                return asset.getString("browser_download_url")
-            }
-        }
-        return null
-    }
-
-    private fun githubRequest(url: String, token: String): Request =
-        Request.Builder()
-            .url(url)
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "domofon-android")
-            .apply {
-                if (token.isNotBlank()) header("Authorization", "Bearer $token")
-            }
-            .build()
-
-    private fun download(url: String, token: String, target: File) {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "domofon-android")
-            .header("Accept", "application/octet-stream")
-            .apply {
-                if (token.isNotBlank()) header("Authorization", "Bearer $token")
-            }
-            .build()
-        http.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("Не удалось скачать APK: HTTP ${response.code}")
-            val body = response.body ?: error("Пустой ответ при скачивании")
-            val total = body.contentLength()
-            target.outputStream().use { out ->
-                body.byteStream().use { input ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var read = 0L
-                    while (true) {
-                        val n = input.read(buffer)
-                        if (n <= 0) break
-                        out.write(buffer, 0, n)
-                        read += n
-                        val percent = if (total > 0) ((read * 100) / total).toInt() else 0
-                        _status.value = UpdateStatus.Downloading(percent.coerceIn(0, 100))
-                    }
-                }
-            }
-        }
-        if (!target.exists() || target.length() < 1_000_000) {
-            error("Скачанный файл слишком маленький — это не APK")
         }
     }
 
@@ -226,20 +92,5 @@ class AppUpdater(
         app.startActivity(intent)
     }
 
-    private fun formatVersion(tag: String): String = tag.removePrefix("v").removePrefix("V")
-
-    private fun isNewer(latestTag: String): Boolean =
-        compareVersions(formatVersion(latestTag), BuildConfig.VERSION_NAME) > 0
-
-    private fun compareVersions(left: String, right: String): Int {
-        val a = left.split('.', '-', '_').mapNotNull { it.toIntOrNull() }
-        val b = right.split('.', '-', '_').mapNotNull { it.toIntOrNull() }
-        val max = maxOf(a.size, b.size)
-        for (i in 0 until max) {
-            val av = a.getOrElse(i) { 0 }
-            val bv = b.getOrElse(i) { 0 }
-            if (av != bv) return av.compareTo(bv)
-        }
-        return 0
-    }
+    private fun isNewer(serverCode: Int): Boolean = serverCode > BuildConfig.VERSION_CODE
 }

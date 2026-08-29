@@ -25,15 +25,13 @@ fun DomofonRoot(viewModel: DomofonViewModel = viewModel()) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
     val updateOffer by viewModel.updateOffer.collectAsStateWithLifecycle()
-    val releases by viewModel.releases.collectAsStateWithLifecycle()
-    val releasesError by viewModel.releasesError.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
         viewModel.messages.collect { snackbar.showSnackbar(it) }
     }
 
-    LaunchedEffect(settings.isLoggedIn, settings.githubToken, settings.githubRepo) {
+    LaunchedEffect(settings.isLoggedIn, settings.bridgeUrl, settings.bridgeToken) {
         if (settings.isLoggedIn) {
             viewModel.checkUpdatesAfterLogin()
         }
@@ -58,11 +56,8 @@ fun DomofonRoot(viewModel: DomofonViewModel = viewModel()) {
                     current = settings,
                     updateStatus = updateStatus,
                     updateOffer = updateOffer,
-                    releases = releases,
-                    releasesError = releasesError,
                     onLogin = viewModel::login,
                     onLogout = viewModel::logout,
-                    onLoadReleaseHistory = viewModel::loadReleaseHistory,
                     onUpdate = viewModel::updateApp,
                     onBack = { nav.popBackStack() },
                 )

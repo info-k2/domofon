@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
 class DomofonViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SettingsStore(application)
     private val bridge = BridgeClient()
-    private val updater = AppUpdater(application)
+    private val updater = AppUpdater(application, bridge)
 
     val settings = store.settings.stateIn(
         viewModelScope,
@@ -26,8 +26,6 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
 
     val updateStatus = updater.status
     val updateOffer = updater.updateOffer
-    val releases = updater.releases
-    val releasesError = updater.releasesError
 
     private val _messages = MutableSharedFlow<String>()
     val messages = _messages.asSharedFlow()
@@ -39,11 +37,9 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
                     val saved = draft.copy(
                         bridgeToken = result.apiKey,
                         rtspUrl = result.streamUrl,
-                        githubToken = result.githubToken,
-                        githubRepo = result.githubRepo,
                     )
                     store.save(saved)
-                    updater.checkLatest(result.githubToken, result.githubRepo)
+                    updater.checkLatest(saved)
                     _messages.emit("Вход выполнен")
                 }
                 .onFailure { _messages.emit(it.message ?: "Не удалось войти") }
@@ -57,19 +53,10 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
                 current.copy(
                     bridgeToken = "",
                     rtspUrl = "",
-                    githubToken = "",
                 ),
             )
             updater.clearUpdateState()
             _messages.emit("Вы вышли из аккаунта")
-        }
-    }
-
-    fun loadReleaseHistory() {
-        viewModelScope.launch {
-            val current = settings.value
-            if (!current.isLoggedIn) return@launch
-            updater.loadReleaseHistory(current.githubToken, current.githubRepo)
         }
     }
 
@@ -89,7 +76,7 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
                 _messages.emit("Обновление недоступно")
                 return@launch
             }
-            updater.update(current.githubToken, offer.apkUrl)
+            updater.update(current, offer.apkUrl)
                 .onSuccess { _messages.emit("Установите скачанное обновление") }
                 .onFailure { _messages.emit(it.message ?: "Обновление не удалось") }
         }
@@ -99,7 +86,7 @@ class DomofonViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val current = settings.value
             if (!current.isLoggedIn) return@launch
-            updater.checkLatest(current.githubToken, current.githubRepo)
+            updater.checkLatest(current)
         }
     }
 }
